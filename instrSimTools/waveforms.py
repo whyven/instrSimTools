@@ -357,7 +357,8 @@ def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bun
     Fs = 1 / (pulse_time[1] - pulse_time[0])
     pulse_period = 1 / rf
     temp = pulse[pulse_time > -pulse_period / 2]
-    temp = temp[pulse_time < pulse_period / 2]
+    temp_time_ary = pulse_time[pulse_time > -pulse_period / 2]
+    temp = temp[temp_time_ary < pulse_period / 2]
     pulse_ary = np.concatenate((np.zeros(temp.size), temp))
     for _ in range(bunches - 1):
         pulse_ary = np.concatenate((pulse_ary, temp))
