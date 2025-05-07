@@ -10,6 +10,10 @@ from scipy.special import erf
 import matplotlib.pyplot as plt
 import skrf as rf
 
+# --- Constants
+XLABEL = "Frequency (Hz)"
+YLABEL = "Attenuation (dB)"
+
 # --- --- Attenuation equations
 cable_atten = { "ldf1"		: (lambda x: (3.92700613e-01*np.sqrt(x)+1.22050618e-03*x+5.91674552e-05)/100 ), 
 				"ldf2"		: (lambda x: (3.31327012e-01*np.sqrt(x)+1.07614300e-03*x-7.40976465e-06)/100 ), 

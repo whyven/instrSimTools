@@ -342,7 +342,7 @@ def mod_pulse_train(t: np.ndarray, rf: float, pulse: np.ndarray, pulse_time: np.
 # -------------------------------- Signal Pulse Trains ------------------------------------- #
 
 # --- Create a Pulse Train
-def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bunches: int) -> tuple[np.ndarray, np.ndarray]:
+def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bunches: int, pad_train=None) -> tuple[np.ndarray, np.ndarray]:
     """Generate a train of pulses.
     
     Args:
@@ -354,15 +354,48 @@ def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bun
     Returns:
         tuple[np.ndarray, np.ndarray]: Time array and pulse train waveform.
     """
-    Fs = 1 / (pulse_time[1] - pulse_time[0])
+    #TODO create_pulse_train - a full period before and after the train is zero, make optional.
+    # --- New arrays so originals are not changed
+    psig = np.copy(pulse)
+    ptime = np.copy(pulse_time)
+    
+    Fs = 1 / (ptime[1] - ptime[0])
     pulse_period = 1 / rf
-    temp = pulse[pulse_time > -pulse_period / 2]
-    temp_time_ary = pulse_time[pulse_time > -pulse_period / 2]
+    
+    # Check if pulse_time is smaller than pulse_period
+    if (ptime[-1] - ptime[0]) < pulse_period:
+        # Calculate the number of samples to zero-pad
+        num_zeros = int((pulse_period - (ptime[-1] - ptime[0])) * Fs)
+        
+        # Zero-pad the pulse
+        psig = np.pad(psig, num_zeros//2, mode='constant')
+        
+        # Create new pulse_time
+        ptime = np.linspace( -0.5*pulse_period, 0.5*pulse_period, psig.size )
+
+    temp = psig[ptime > -pulse_period / 2]
+    temp_time_ary = ptime[ptime > -pulse_period / 2]
     temp = temp[temp_time_ary < pulse_period / 2]
-    pulse_ary = np.concatenate((np.zeros(temp.size), temp))
+    
+    # --- Create the pulse train
+    # --- --- pad if option there... 
+    if pad_train is None:
+        pulse_ary = temp
+    elif isinstance(pad_train, int):
+        pulse_ary = np.concatenate((np.zeros(temp.size*pad_train), temp))
+    elif isinstance(pad_train, tuple) and len(pad_train) == 2:
+        pulse_ary = np.concatenate((np.zeros(temp.size * pad_train[0]), temp))
+    else:
+        raise ValueError("pad_train must be None, an int, or a tuple of two ints")
+    
+    # --- --- build train
     for _ in range(bunches - 1):
         pulse_ary = np.concatenate((pulse_ary, temp))
-    pulse_ary = np.concatenate((pulse_ary, np.zeros(temp.size)))
+    
+    # --- --- pad if option there...
+    if isinstance(pad_train, tuple) and len(pad_train) == 2:
+        pulse_ary = np.concatenate((pulse_ary, np.zeros(temp.size*pad_train[1])))
+    
     return np.linspace(0.0, pulse_ary.size / Fs, pulse_ary.size), pulse_ary
 
 # --- Create a Pulse Train with Jitter
