@@ -333,10 +333,22 @@ def import_atten( path=None ):
 
 # --- Check if a number
 def is_num(x):
+	"""
+	Check if x is a number (i.e. can be converted to a float)
+
+	Parameters
+	----------
+	x : object
+		the object to check
+
+	Returns
+	-------
+	True if x is a number, False otherwise
+	"""
 	try:
-		temp = float(x)
+		float(x)
 		return True
-	except Exception as e:
+	except ValueError:
 		return False
 
 # --- Compare lengths of two arrays
@@ -346,3 +358,83 @@ def check_length( x_data, y_data ):
 		return None, None
 	else:
 		return x_data[:min_len], y_data[:min_len]
+	
+# --- Create a WCM Circuit
+def simple_wcm_circuit( Cb, Cc, Cp, Ls, Lby, Rp, *args, **kwargs ):
+	# --- Initialize the circuit frequency domain
+	freq = rf.Frequency( start=0.001, stop=10000, unit="MHz", npoints=50001, sweep_type='log' )
+	wcm_media = rf.DefinedGammaZ0( freq, z0=50, gamma=1j*freq.w/rf.c )
+	
+	# --- Define the components
+	Cbr = wcm_media.capacitor( Cb, name="Cbr") 			# Ceramic Break Capacitance
+	Ccc = wcm_media.capacitor( Cc, name="Ccc")	        # Cocentric Cylinders Capacitance -- not sure about this one..
+	EPC = wcm_media.capacitor( Cp, name="EPC")			# Equivalent Parallel Capacitance
+	RLs = wcm_media.inductor( Ls, name="RLs" )			# Series Inductance
+	# RLp = wcm_media.inductor( 41.7e-3, name="RLp" )			# Parallel Inductance
+	Llf = wcm_media.inductor( Lby, name="Llf" )			# Low frequency Inductance -- Current bypass assembly
+	RWCM = wcm_media.resistor( Rp, name="RWCM" )		# Equivalent parallel resistance of WCM
+	gnd = rf.Circuit.Ground( freq, name="gnd" )
+	port1 = rf.Circuit.Port( freq, name="port1", z0=50 )
+	port2 = rf.Circuit.Port( freq, name="port2", z0=50 )
+
+	# --- Make Netlist
+	cnx = [
+    [(port1,0),(Llf,0),(Cbr,0),(Ccc,0), (EPC,0), (RLs,0), (port2,0)], # (RLp,0),(port2,0)],
+    [(RLs,1), (RWCM,0),],
+    [(gnd,0),(Llf,1),(Cbr,1),(Ccc,1), (EPC,1), (RWCM,1),] # (RLp,1),]
+	]
+
+	cir = rf.Circuit(cnx)
+	ntw = cir.network
+	
+	return ntw
+
+# --- Calculate Parallel Plate Capacitance
+def calc_cap_parallel_plate( ep_r, A, d ):
+	return ep_r * const.epsilon_0 * A / d
+
+# --- Calculate Capacity of Cocentric Cylinders
+def calc_cap_cocentric_cylinders( ep_r, d_outer, d_inner ):
+	return ( ep_r * const.epsilon_0 * 2 * np.pi ) / np.log( d_outer / d_inner )
+
+# --- Calculate Inductance of Cocentric Cylinders
+def calc_ind_cocentric_cylinders( mu_r, d_outer, d_inner, length ):
+	return ((mu_r * const.mu_0) / (2*np.pi)) * np.log( d_outer / d_inner ) * length
+
+# --- Calculate series inductance and parallel capacitance from S11
+def calc_resistor_parasitics_from_s11( ntwk ):
+	# Convert to Z-parameters (input impedance)
+	z = ntwk.z[:, 0, 0]  # Get Z11 over all frequencies
+	f = ntwk.f  # Frequency array in Hz
+
+	# Calculate series inductance from imaginary part of Z
+	X = np.imag(z)
+	L_series = X / (2 * np.pi * f)
+
+	# Convert Z to admittance (for parallel capacitance extraction)
+	y = 1 / z
+	B = np.imag(y)
+	C_parallel = -B / (2 * np.pi * f)
+
+	# Calculate parallel inductance if B is negative
+	L_parallel = -1 / (2 * np.pi * f * B)
+
+	return L_series, C_parallel, L_parallel, f
+
+# --- Calculate 3dB bandwidth
+def measure_3db_bandwidth( ntwk ):
+	freq = ntwk.f
+	magnitude_db = ntwk.s21_db
+	
+	max_db = np.max(magnitude_db)
+	threshold = max_db - 3
+	
+	# Find where the magnitude crosses the -3 dB line
+	indices = np.where(magnitude_db >= threshold)[0]
+
+	if len(indices) < 2:
+		return 0.0  # Cannot determine bandwidth
+
+	f_low = freq[indices[0]]
+	f_high = freq[indices[-1]]
+	return f_high - f_low
