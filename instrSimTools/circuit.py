@@ -424,7 +424,7 @@ def calc_resistor_parasitics_from_s11( ntwk ):
 # --- Calculate 3dB bandwidth
 def measure_3db_bandwidth( ntwk ):
 	freq = ntwk.f
-	magnitude_db = ntwk.s21_db
+	magnitude_db = ntwk.s21_db.to_dataframe().values[:,0]
 	
 	max_db = np.max(magnitude_db)
 	threshold = max_db - 3

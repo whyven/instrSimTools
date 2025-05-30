@@ -522,3 +522,21 @@ def gaus_smooth(sig: np.ndarray, FWHM: float, win_size: int, debug: bool = False
         smooth_sig[i] = temp.sum()
     
     return smooth_sig
+
+import numpy as np
+
+def gamma_to_beta(gamma):
+    """
+    Convert Lorentz factor gamma to velocity ratio beta = v/c.
+
+    Parameters:
+        gamma (float or array-like): Lorentz factor (must be >= 1)
+
+    Returns:
+        beta (float or array-like): Velocity as a fraction of the speed of light
+    """
+    gamma = np.asarray(gamma)
+    if np.any(gamma < 1):
+        raise ValueError("Gamma must be >= 1")
+    beta = np.sqrt(1 - 1 / gamma**2)
+    return beta
