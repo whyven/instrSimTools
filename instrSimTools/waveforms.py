@@ -1,8 +1,37 @@
 import numpy as np
 import scipy.signal as sg
+import scipy.constants as const
 from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
 import matplotlib.pyplot as plt
+
+# -------------------------------- Machine Constants  ---------------------------------- #
+# ---- HSR Frequencies ---- #
+HSR_P_REV_FREQ_STORE    = 78194.34      # - Hz
+HSR_P_REV_FREQ_INJ      = 78133.5651    # - Hz
+HSR_Au_REV_FREQ_STORE   = 78194.34      # - Hz
+HSR_Au_REV_FREQ_INJ     = 77840.6       # - Hz
+
+HSR_RF_HARMONIC_NUMBER  = 315
+HSR_RF_24M  = HSR_RF_HARMONIC_NUMBER * HSR_P_REV_FREQ_STORE
+HSR_RF_49M  = 2 * HSR_RF_24M
+HSR_RF_98M  = 2 * HSR_RF_49M
+HSR_RF_197M = 2 * HSR_RF_98M
+HSR_RF_591M = 3 * HSR_RF_197M
+
+HSR_BUNCH_LENGTH_23GeV  = 50.0 / const.c     # - cm rms
+HSR_BUNCH_LENGTH_41GeV  = 11.0 / const.c     # - cm rms
+HSR_BUNCH_LENGTH_100GeV = 7.0  / const.c     # - cm rms
+HSR_BUNCH_LENGTH_275GeV = 6.0  / const.c     # - cm rms
+
+# ---- ESR Frequencies ---- #
+ESR_REV_FREQ            = 78194.34  # - Hz
+ESR_RF_HARMONIC_NUMBER  = 7560
+ESR_RF_591M             = ESR_RF_HARMONIC_NUMBER * ESR_REV_FREQ
+ESR_BUNCH_LENGTH_5GeV   = 23.35     # - ps rms
+ESR_BUNCH_LENGTH_10GeV  = 30.02     # - ps rms
+
+# ---- EIS Frequencies ---- #
 
 # -------------------------------- Signal Creation ------------------------------------- #
 
