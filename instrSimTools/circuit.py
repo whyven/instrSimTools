@@ -358,11 +358,78 @@ def check_length( x_data, y_data ):
 		return None, None
 	else:
 		return x_data[:min_len], y_data[:min_len]
-	
+
+def convert_lengths(values, from_unit, to_unit: str, show: bool = False):
+    """
+    Convert lengths between imperial and metric units.
+
+    Args:
+        values (float, list, or tuple): Length or list/tuple of lengths to convert.
+        from_unit (str or list/tuple): Unit(s) to convert from. Can be a single unit or a list/tuple matching the length of values.
+        to_unit (str): Unit to convert to. Supported: 'mm', 'cm', 'm', 'in', 'ft', 'yd'
+        show (bool): If True, prints each conversion.
+
+    Returns:
+        float or list: Converted length(s).
+    """
+
+    # Conversion factors to meters
+    to_meters = {
+        'mm': 0.001,
+        'cm': 0.01,
+        'm': 1.0,
+        'in': 0.0254,
+        'ft': 0.3048,
+        'yd': 0.9144
+    }
+
+    # Normalize inputs
+    is_single = False
+    if isinstance(values, (int, float)):
+        values = [values]
+        is_single = True
+    elif isinstance(values, (list, tuple)):
+        values = list(values)
+    else:
+        raise TypeError("values must be a number, list, or tuple.")
+
+    # Normalize from_unit
+    if isinstance(from_unit, str):
+        from_units = [from_unit.lower()] * len(values)
+    elif isinstance(from_unit, (list, tuple)):
+        if len(from_unit) != len(values):
+            raise ValueError("Length of from_unit list must match length of values.")
+        from_units = [u.lower() for u in from_unit]
+    else:
+        raise TypeError("from_unit must be a string or list/tuple of strings.")
+
+    # Normalize to_unit
+    to_unit = to_unit.lower()
+
+    # Validate units
+    for u in from_units:
+        if u not in to_meters:
+            raise ValueError(f"Unsupported from_unit: {u}")
+    if to_unit not in to_meters:
+        raise ValueError(f"Unsupported to_unit: {to_unit}")
+
+    # Convert
+    results = []
+    for val, f_unit in zip(values, from_units):
+        meters = val * to_meters[f_unit]
+        converted = meters / to_meters[to_unit]
+        results.append(converted)
+
+        if show:
+            print(f"{val} {f_unit} = {converted:.4f} {to_unit}")
+
+    return results[0] if is_single else results
+
+
 # --- Create a WCM Circuit
 def simple_wcm_circuit( Cb, Cc, Cp, Ls, Lby, Rp, *args, **kwargs ):
 	# --- Initialize the circuit frequency domain
-	freq = rf.Frequency( start=0.001, stop=10000, unit="MHz", npoints=50001, sweep_type='log' )
+	freq = rf.Frequency( start=0.0001, stop=10000, unit="MHz", npoints=50001, sweep_type='log' )
 	wcm_media = rf.DefinedGammaZ0( freq, z0=50, gamma=1j*freq.w/rf.c )
 	
 	# --- Define the components
@@ -394,8 +461,8 @@ def calc_cap_parallel_plate( ep_r, A, d ):
 	return ep_r * const.epsilon_0 * A / d
 
 # --- Calculate Capacity of Cocentric Cylinders
-def calc_cap_cocentric_cylinders( ep_r, d_outer, d_inner ):
-	return ( ep_r * const.epsilon_0 * 2 * np.pi ) / np.log( d_outer / d_inner )
+def calc_cap_cocentric_cylinders( ep_r, d_outer, d_inner, length ):
+	return ( ( ep_r * const.epsilon_0 * 2 * np.pi ) / np.log( d_outer / d_inner ) ) * length
 
 # --- Calculate Inductance of Cocentric Cylinders
 def calc_ind_cocentric_cylinders( mu_r, d_outer, d_inner, length ):
@@ -437,4 +504,4 @@ def measure_3db_bandwidth( ntwk ):
 
 	f_low = freq[indices[0]]
 	f_high = freq[indices[-1]]
-	return f_high - f_low
+	return f_high - f_low, f_low, f_high, max_db
