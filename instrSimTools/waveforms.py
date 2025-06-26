@@ -28,8 +28,8 @@ HSR_BUNCH_LENGTH_275GeV = 6.0  / const.c     # - cm rms
 ESR_REV_FREQ            = 78194.34  # - Hz
 ESR_RF_HARMONIC_NUMBER  = 7560
 ESR_RF_591M             = ESR_RF_HARMONIC_NUMBER * ESR_REV_FREQ
-ESR_BUNCH_LENGTH_5GeV   = 23.35     # - ps rms
-ESR_BUNCH_LENGTH_10GeV  = 30.02     # - ps rms
+ESR_BUNCH_LENGTH_5GeV   = 23.35e-12     # - s rms
+ESR_BUNCH_LENGTH_18GeV  = 30.02e-12     # - s rms
 
 # ---- EIS Frequencies ---- #
 
