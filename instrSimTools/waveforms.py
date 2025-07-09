@@ -19,10 +19,16 @@ HSR_RF_98M  = 2 * HSR_RF_49M
 HSR_RF_197M = 2 * HSR_RF_98M
 HSR_RF_591M = 3 * HSR_RF_197M
 
-HSR_BUNCH_LENGTH_23GeV  = 50.0 / const.c     # - cm rms
-HSR_BUNCH_LENGTH_41GeV  = 11.0 / const.c     # - cm rms
-HSR_BUNCH_LENGTH_100GeV = 7.0  / const.c     # - cm rms
-HSR_BUNCH_LENGTH_275GeV = 6.0  / const.c     # - cm rms
+# ---- HSR Bunch Lengths ---- #
+# ---- ---- PP ---- ---- #
+HSR_PP_BUNCH_LENGTH_23GeV  = 50.0e-2 / const.c     # - s rms (formula is given in cm)
+HSR_PP_BUNCH_LENGTH_41GeV  = 7.5e-2 / const.c     # - s rms (formula is given in cm)
+HSR_PP_BUNCH_LENGTH_100GeV = 7.0e-2  / const.c     # - s rms (formula is given in cm)
+HSR_PP_BUNCH_LENGTH_275GeV = 6.0e-2  / const.c     # - s rms (formula is given in cm)
+# ---- ---- AU ---- ---- #
+HSR_AU_BUNCH_LENGTH_10GeV  = 125.0e-2 / const.c     # - s rms (formula is given in cm)
+HSR_AU_BUNCH_LENGTH_41GeV  = 11.6e-2  / const.c     # - s rms (formula is given in cm)
+HSR_AU_BUNCH_LENGTH_110GeV = 7.0e-2   / const.c     # - s rms (formula is given in cm)
 
 # ---- ESR Frequencies ---- #
 ESR_REV_FREQ            = 78194.34  # - Hz
@@ -133,18 +139,29 @@ def damped_sine_wave(t: np.ndarray, t0: float = 0.0, freq: float = 1.0, decay: f
     return amp*dswn
 
 # --- Create a Cosine Square Pulse 
-def cosine_square_pulse(t: np.ndarray, period: float, amplitude: float = 1.0, phi: float = 0) -> np.ndarray:
+def cosine_square_pulse(t: np.ndarray, pulse_width: float, pw_type: str = 'fixed', amplitude: float = 1.0, phi: float = 0) -> np.ndarray:
     """Generate a cosine square pulse.
     
     Args:
         t (np.ndarray): Time array.
-        period (float): Period of the pulse.
+        pulse_width (float): Pulse width in seconds. Width is configurable by optional argument `pw_type`.
         amplitude (float, optional): Amplitude of the pulse. Defaults to 1.0. 
         phi (float, optional): Signal phase in degrees. Defaults to 0.
+        pw_type (str, optional): Pulse width type. Defaults to 'fixed'.
     
     Returns:
         np.ndarray: Cosine square pulse.
     """
+    # --- Determine the pulse width based on input arguments
+    pwType = pw_type.lower()
+    if pwType == 'fwhm':
+        period = ( pulse_width / (2 * np.sqrt(2 * np.log(2)) ) ) * 7.0 # Convert to RMS then to 99.99% width
+    elif pwType == 'rms':
+        period = pulse_width * 7.0       # Convert to 99.99% width
+    else:
+        period = pulse_width
+    
+    # --- Create the cosine square pulse
     cos_phi = phi*(np.pi/180)
     cos = np.cos((2*np.pi*t)/period+(np.pi+cos_phi))
     cos_sq = (cos-1)**2
@@ -323,21 +340,24 @@ def mod_gaus_pulse(t: np.ndarray, gF: float, gBW: float, modF: list[float], gFAm
     return yenv * mod / np.max(np.abs(yenv * mod))
 
 # --- Modulating Cosine Square Pulses
-def mod_cos_sq_pulse(t: np.ndarray, period: float, modF: float, pulsAmp: float = 1.0, modAmp: float = 1.0, phi: float = 0.0) -> np.ndarray:
+def mod_cos_sq_pulse(t: np.ndarray, pulse_width: float, baseF: float, modF: float, pw_type: str = 'fixed', pulsAmp: float = 1.0, modAmp: float = 1.0, phi: float = 0.0) -> np.ndarray:
     """Modulate a cosine square pulse with multiple frequencies.
     
     Args:
         t (np.ndarray): Time array.
-        period (float): Period of the pulse.
+        pulse_width (float): Pulse width in seconds. Width is configurable by optional argument `pw_type`.
+        baseF (float): Base frequency of the cosine square pulse.
         modF (float): Modulation frequency.
+        pw_type (str, optional): Pulse width type. Defaults to 'fixed'.
+        pulsAmp (float, optional): Amplitude of the cosine square pulse. Defaults to 1.0.
         modAmp (float, optional): Amplitude of the modulation frequencies. Defaults to 1.0.
         phi (float, optional): Signal phase in degrees. Defaults to 0.
     
     Returns:
         np.ndarray: Modulated cosine square waveform.
     """
-    csp = cosine_square_pulse(t, period, amplitude=pulsAmp, phi=phi)
-    csp_sin = np.sin((1/period)*2*np.pi*t)
+    csp = cosine_square_pulse(t, pulse_width, pw_type=pw_type, amplitude=pulsAmp, phi=phi)
+    csp_sin = np.sin((baseF)*2*np.pi*t)
     
     mod_sin = modAmp*np.sin((modF)*2*np.pi*t)
 
@@ -569,3 +589,60 @@ def gamma_to_beta(gamma):
         raise ValueError("Gamma must be >= 1")
     beta = np.sqrt(1 - 1 / gamma**2)
     return beta
+
+# ------------------- Plotting functions ------------------- #
+#TODO : Clean up - This plots the ideal beam pulse with it's spectrum 
+def plot_gaus_pulses( t, pulses, freq, pulse_spec, ):
+    fig, (ax1,ax2) = plt.subplots(nrows=2, ncols=1)
+    # --- Time Plot
+    for p in pulses.keys():
+        sigma = calculate_pulse_width(pulses[p], t[1] - t[0])
+        ax1.plot(t*1e9, pulses[p], label="$\\sigma$={:.2f}cm".format(sigma*const.c))
+        ax2.loglog(freq[freq>0], np.abs(pulse_spec[p][freq>0]), 
+                    label="$\\sigma$={:.2f}cm".format(sigma*const.c))
+    ax1.grid(axis="both",which="both")
+    ax1.set_xlabel("Time [ns]")
+    ax1.set_ylabel("Normalized Amplitude")
+    ax1.set_title('Ideal Beam Pulse, Time')
+    ax1.legend()
+    
+    # --- Freq Plot
+    ax2.grid(axis="both", which="both")
+    ax2.set_xlabel("Freq [GHz]")
+    ax2.set_ylabel("Magnitude")
+    ax2.set_title('Ideal Beam Pulse, Freq.')
+    ax2.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+# --- More Fancy Plotting
+#TODO : Clean up - This compares the ideal pulse with the filtered pulse
+def plot_gaus_compare( org, flt, lbl):
+    colors = ["k","b","g","m","c","r"]
+    # --- check if flt is a tuple 
+    if (type(lbl) is tuple):
+        fig, ax = plt.subplots(nrows=len(lbl), ncols=1)
+        for a,f,l in zip( ax, flt, lbl ):
+            for p,c in zip(org,colors):
+                if p!="Time":
+                    a.plot(org["Time"]*1e9, org[p], color=c, label="$\\sigma$="+p)
+                    a.plot(f["Time"]*1e9, f[p], color=c, linestyle="dashdot", label="$\\sigma$="+p+" "+l)
+                a.grid(axis="both",which="both")
+                a.set_xlabel("Time [ns]")
+                a.set_ylabel("Normalized Amplitude")
+                a.set_title('Ideal Beam Pulse vs '+l)
+                a.legend()
+    else:
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+        for p, c in zip(org, colors):
+            if p!="Time":
+                ax.plot(org["Time"]*1e9, org[p], color=c, label='$\\sigma$='+p)
+                ax.plot(flt["Time"]*1e9, flt[p], color=c, linestyle="dashdot", label="$\\sigma$="+p+" "+lbl)
+            ax.grid(axis="both",which="both")
+            ax.set_xlabel("Time [ns]")
+            ax.set_ylabel("Normalized Amplitude")
+            ax.set_title('Ideal Beam Pulse vs '+lbl)
+            ax.legend()
+    plt.tight_layout()
+    plt.show() 
