@@ -4,6 +4,8 @@ import scipy.constants as const
 from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
 import matplotlib.pyplot as plt
+from typing import Union, Dict, Tuple, List
+
 
 # -------------------------------- Machine Constants  ---------------------------------- #
 # ---- HSR Frequencies ---- #
@@ -278,37 +280,68 @@ def triangle_wave(t: np.ndarray, frequency: float = 1.0, amplitude: float = 1.0)
     return amplitude * sg.sawtooth(2 * np.pi * frequency * t, width=0.5)
 
 # --- Create a dc waveform with linear transitions
-def create_transition_array(length: int, values: tuple, change_points: tuple, transition_lengths: tuple) -> np.ndarray:
+def create_transition_array(
+        length: int,
+        values: Tuple[float,float],
+        change_points: Union[Tuple[int,int], List[int], int],
+        transition_lengths: Union[Tuple[int,int], List[int], int],
+        ) -> np.ndarray:
     """
     Create an array with transitions to different values based on the provided parameters.
 
     Args:
         length (int): Number of turns in the array.
         values (tuple): Tuple containing the values to transition to.
-        change_points (tuple): Tuple containing the turn numbers where the array changes values.
-        transition_lengths (tuple): Tuple containing the number of turns it takes to transition to the new value.
+        change_points (tuple, list, or int): Turn numbers where the array changes values.
+        transition_lengths (tuple, list, or int): Number of turns it takes to transition to the new value.
 
     Returns:
         np.ndarray: Array with transitions to different values.
     """
+
+    # Normalize change_points and transition_lengths to lists
+    if isinstance(change_points, (int, float)):
+        change_points = [change_points] * (len(values) - 1)
+    elif isinstance(change_points, (tuple, list)):
+        change_points = list(change_points)
+
+    if isinstance(transition_lengths, (int, float)):
+        transition_lengths = [transition_lengths] * (len(values) - 1)
+    elif isinstance(transition_lengths, (tuple, list)):
+        transition_lengths = list(transition_lengths)
+
+    # Validate input lengths
     if len(values) != len(change_points) + 1 or len(change_points) != len(transition_lengths):
         raise ValueError("Invalid input lengths. Ensure len(values) = len(change_points) + 1 and len(change_points) = len(transition_lengths).")
 
+    # Initialize the array
     array = np.zeros(length)
     current_value = values[0]
+
+    # Fill up to first change point
     array[:change_points[0]] = current_value
 
+    # Apply transitions
     for i in range(len(change_points)):
         start = change_points[i]
-        end = start + transition_lengths[i]
+        end = min(start + transition_lengths[i], length)
         next_value = values[i + 1]
-        transition = np.linspace(current_value, next_value, transition_lengths[i])
+
+        # Create linear transition
+        transition = np.linspace(current_value, next_value, end - start, endpoint=False)
         array[start:end] = transition
+
         current_value = next_value
+
+        # Fill the next flat section (if any)
         if i < len(change_points) - 1:
-            array[end:change_points[i + 1]] = current_value
+            next_cp = change_points[i + 1]
+            if end < next_cp:
+                array[end:next_cp] = current_value
         else:
-            array[end:] = current_value
+            # Fill the remainder of the array
+            if end < length:
+                array[end:] = current_value
 
     return array
 
@@ -572,8 +605,6 @@ def gaus_smooth(sig: np.ndarray, FWHM: float, win_size: int, debug: bool = False
     
     return smooth_sig
 
-import numpy as np
-
 def gamma_to_beta(gamma):
     """
     Convert Lorentz factor gamma to velocity ratio beta = v/c.
@@ -591,27 +622,103 @@ def gamma_to_beta(gamma):
     return beta
 
 # ------------------- Plotting functions ------------------- #
-#TODO : Clean up - This plots the ideal beam pulse with it's spectrum 
-def plot_gaus_pulses( t, pulses, freq, pulse_spec, ):
-    fig, (ax1,ax2) = plt.subplots(nrows=2, ncols=1)
-    # --- Time Plot
-    for p in pulses.keys():
-        sigma = calculate_pulse_width(pulses[p], t[1] - t[0])
-        ax1.plot(t*1e9, pulses[p], label="$\\sigma$={:.2f}cm".format(sigma*const.c))
-        ax2.loglog(freq[freq>0], np.abs(pulse_spec[p][freq>0]), 
-                    label="$\\sigma$={:.2f}cm".format(sigma*const.c))
-    ax1.grid(axis="both",which="both")
-    ax1.set_xlabel("Time [ns]")
-    ax1.set_ylabel("Normalized Amplitude")
-    ax1.set_title('Ideal Beam Pulse, Time')
-    ax1.legend()
-    
-    # --- Freq Plot
-    ax2.grid(axis="both", which="both")
-    ax2.set_xlabel("Freq [GHz]")
-    ax2.set_ylabel("Magnitude")
-    ax2.set_title('Ideal Beam Pulse, Freq.')
-    ax2.legend()
+def plot_gaus_pulses(
+    t: np.ndarray,
+    pulses: Union[Dict[str, np.ndarray], np.ndarray],
+    freq: np.ndarray,
+    pulse_spec: Union[Dict[str, np.ndarray], np.ndarray],
+    title: str = None,
+    ax1_xlabel: str = None,
+    ax1_ylabel: str = None,
+    ax1_xlim: Tuple[float, float] = None,
+    ax1_ylim: Tuple[float, float] = None,
+    ax2_xlabel: str = None,
+    ax2_ylabel: str = None,
+    ax2_xlim: Tuple[float, float] = None,
+    ax2_ylim: Tuple[float, float] = None,
+    grid: bool = True,
+    legend: bool = True,
+    loglog: bool = False,
+    figsize: Tuple[int, int] = (8, 6),
+    dpi: int = 100,
+    **kwargs
+) -> None:
+    """
+    Plot Gaussian pulses in time and frequency domains.
+
+    Parameters:
+    t (np.ndarray): Time array
+    pulses (Union[Dict[str, np.ndarray], np.ndarray]): Dictionary of pulse values or single pulse array
+    freq (np.ndarray): Frequency array
+    pulse_spec (Union[Dict[str, np.ndarray], np.ndarray]): Dictionary of pulse spectra or single pulse spectrum array
+    title (str, optional): Plot title. Defaults to None.
+    ax1_xlabel (str, optional): X-axis label for time plot. Defaults to None.
+    ax1_ylabel (str, optional): Y-axis label for time plot. Defaults to None.
+    ax1_xlim (Tuple[float, float], optional): X-axis limits for time plot. Defaults to None.
+    ax1_ylim (Tuple[float, float], optional): Y-axis limits for time plot. Defaults to None.
+    ax2_xlabel (str, optional): X-axis label for frequency plot. Defaults to None.
+    ax2_ylabel (str, optional): Y-axis label for frequency plot. Defaults to None.
+    ax2_xlim (Tuple[float, float], optional): X-axis limits for frequency plot. Defaults to None.
+    ax2_ylim (Tuple[float, float], optional): Y-axis limits for frequency plot. Defaults to None.
+    grid (bool, optional): Show grid. Defaults to True.
+    legend (bool, optional): Show legend. Defaults to True.
+    loglog (bool, optional): Use log-log scale for frequency plot. Defaults to False.
+    figsize (Tuple[int, int], optional): Figure size. Defaults to (8, 6).
+    dpi (int, optional): Figure DPI. Defaults to 100.
+    **kwargs: Additional keyword arguments for plot customization
+
+    Returns:
+    None
+    """
+    tt = t*1e9  # Convert time to nanoseconds
+    ff = freq*1e-9  # Convert frequency to GHz
+
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=figsize, dpi=dpi)
+
+    if isinstance(pulses, dict):
+        for p in pulses.keys():
+            # sigma = calculate_pulse_width(pulses[p], t[1] - t[0]) / 1e9
+            # ax1.plot(tt, pulses[p], label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+            ax1.plot(tt, pulses[p], label=p)
+            if loglog:
+                ax2.loglog(ff, np.abs(pulse_spec[p]), label=p)
+                        #    label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+                            
+            else:
+                ax2.plot(ff, np.abs(pulse_spec[p]),label=p)
+                        #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+    else:
+        # sigma = calculate_pulse_width(pulses, t[1] - t[0]) / 1e9
+        ax1.plot(tt, pulses, )
+                #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+        if loglog:
+            ax2.loglog(ff, np.abs(pulse_spec), )
+                    #    label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+        else:
+            ax2.plot(ff, np.abs(pulse_spec), )
+                    #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
+            
+    ax1.grid(axis="both", which="both" if grid else "none", ls='--', lw=0.5, color='gray')
+    ax1.set_xlabel(ax1_xlabel or "Time [ns]")
+    ax1.set_ylabel(ax1_ylabel or "Normalized Amplitude")
+    ax1.set_title(title+", Time" or 'Ideal Beam Pulse, Time')
+    if ax1_xlim:
+        ax1.set_xlim(ax1_xlim)
+    if ax1_ylim:
+        ax1.set_ylim(ax1_ylim)
+    if legend:
+        ax1.legend()
+
+    ax2.grid(axis="both", which="both" if grid else "none", ls='--', lw=0.5, color='gray')
+    ax2.set_xlabel(ax2_xlabel or "Freq [GHz]")
+    ax2.set_ylabel(ax2_ylabel or "Magnitude")
+    ax2.set_title(title+", Freq" or 'Ideal Beam Pulse, Freq.')
+    if ax2_xlim:
+        ax2.set_xlim(ax2_xlim)
+    if ax2_ylim:
+        ax2.set_ylim(ax2_ylim)
+    if legend:
+        ax2.legend()
 
     plt.tight_layout()
     plt.show()
@@ -646,3 +753,40 @@ def plot_gaus_compare( org, flt, lbl):
             ax.legend()
     plt.tight_layout()
     plt.show() 
+
+# --- Waterfall plot generator
+def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50) -> None:
+    """
+    Creates a waterfall plot of a subset of waveforms from a list.
+
+    Args:
+        waveforms: A list of numpy arrays, where each array represents a waveform.
+        num_waveforms_to_plot: The number of evenly spaced waveforms to display.
+
+    Raises:
+        ValueError: If num_waveforms_to_plot exceeds the total number of waveforms.
+
+    Returns:
+        None
+    """
+
+    num_total_waveforms = len(waveforms)
+
+    if num_waveforms_to_plot > num_total_waveforms:
+        raise ValueError("Number of waveforms to plot cannot exceed the total number of waveforms.")
+
+    indices = np.linspace(0, num_total_waveforms - 1, num_waveforms_to_plot, dtype=int)
+    selected_waveforms = [waveforms[i] for i in indices]
+
+    plt.figure(figsize=(10, 6))
+
+    for i, waveform in enumerate(selected_waveforms):
+        time = np.arange(len(waveform))  # Assuming time is just sample index.
+        plt.plot(time, waveform + i * 5, linewidth=0.75, color='b') # Add offset to each waveform
+
+    plt.title("Waterfall Plot of Waveforms")
+    plt.xlabel("Time (Samples)")
+    plt.ylabel("Amplitude + Offset")
+    plt.grid(True, linestyle='--', alpha=0.4)
+    plt.tight_layout()
+    plt.show()
