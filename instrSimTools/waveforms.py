@@ -755,13 +755,14 @@ def plot_gaus_compare( org, flt, lbl):
     plt.show() 
 
 # --- Waterfall plot generator
-def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50) -> None:
+def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50, time_array: np.ndarray = None) -> None:
     """
     Creates a waterfall plot of a subset of waveforms from a list.
 
     Args:
         waveforms: A list of numpy arrays, where each array represents a waveform.
         num_waveforms_to_plot: The number of evenly spaced waveforms to display.
+        time_array: An optional array of time values for the waveforms.
 
     Raises:
         ValueError: If num_waveforms_to_plot exceeds the total number of waveforms.
@@ -781,7 +782,10 @@ def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50)
     plt.figure(figsize=(10, 6))
 
     for i, waveform in enumerate(selected_waveforms):
-        time = np.arange(len(waveform))  # Assuming time is just sample index.
+        if time_array is not None:
+            time = np.arange(len(waveform))  # Assuming time is just sample index.
+        else:
+            time = np.array(time_array)
         plt.plot(time, waveform + i * 5, linewidth=0.75, color='b') # Add offset to each waveform
 
     plt.title("Waterfall Plot of Waveforms")
