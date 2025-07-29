@@ -4,6 +4,7 @@ import scipy.constants as const
 from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from typing import Union, Dict, Tuple, List
 
 
@@ -44,34 +45,60 @@ ESR_BUNCH_LENGTH_18GeV  = 30.02e-12     # - s rms
 # -------------------------------- Signal Creation ------------------------------------- #
 
 # --- Create a Gaussian Pulse
-def gaussian_pulse(t: np.ndarray, sigma: float = 1.0, FWHM: float = None, rf: float = None, BW: float = 1) -> tuple[np.ndarray, float]:
-    """Generate a Gaussian pulse. The pulse can be defined by its standard deviation (sigma), full width at half maximum (FWHM), or radio frequency (rf) and bandwidth (BW).
-    
+def gaussian_pulse(
+    t: np.ndarray,
+    sigma: float = 1.0,
+    FWHM: float = None,
+    rf: float = None,
+    BW: float = 1,
+    phase_shift: float = 0.0,
+    phase_freq: float = None
+) -> np.ndarray:
+    """
+    Generate a Gaussian pulse with optional phase shift based on frequency.
+
     Args:
         t (np.ndarray): Time array.
-        sigma (float, optional): Standard deviation of the Gaussian pulse. Defaults to 1.0.
+        sigma (float, optional): Standard deviation. Defaults to 1.0.
         FWHM (float, optional): Full width at half maximum. Defaults to None.
         rf (float, optional): Radio frequency. Defaults to None.
         BW (float, optional): Bandwidth. Defaults to 1.
-    
+        phase_shift (float, optional): Phase shift in degrees. Defaults to 0.0.
+        phase_freq (float, optional): Frequency in Hz for phase shift calculation. Defaults to None.
+
     Returns:
-        tuple[np.ndarray, float]: Normalized Gaussian pulse and its calculated standard deviation.
+        np.ndarray: Gaussian pulse with optional phase shift.
     """
+    t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
+    t = t - t_shift
+
     if rf is None:
+        # Calculate the standard deviation from the FWHM if given
         s = sigma if FWHM is None else FWHM / (2 * np.sqrt(2 * np.log(2)))
         gaus_pulse = (1 / (s * np.sqrt(2 * np.pi))) * np.exp(-0.5 * (t / s)**2)
         return gaus_pulse / np.max(gaus_pulse), s
     else:
+        # Create gaussian envelope from rf and the bandwidth if given
         ref = np.power(10.0, -6 / 20.0)
         a = -(np.pi * rf * BW) ** 2 / (4.0 * np.log(ref))
         yenv = np.exp(-a * t**2)
-        s_calc = calculate_pulse_width( yenv, t[1] - t[0])  # Optional: Calculate pulse width for verification
-        return yenv, s_calc
+        return yenv / np.max(yenv)
+
 
 # --- Create a Skew-Gaussian Pulse
-def skew_gaus_pulse(t: np.ndarray, skew: float = 1.0, sigma: float = 1.0, FWHM: float = None, rf: float = None, BW: float = 1) -> tuple[np.ndarray, float]:
-    """Generate a skewed Gaussian pulse.
-    
+def skew_gaus_pulse(
+    t: np.ndarray,
+    skew: float = 1.0,
+    sigma: float = 1.0,
+    FWHM: float = None,
+    rf: float = None,
+    BW: float = 1,
+    phase_shift: float = 0.0,
+    phase_freq: float = None
+) -> np.ndarray:
+    """
+    Generate a skewed Gaussian pulse with optional phase shift based on frequency.
+
     Args:
         t (np.ndarray): Time array.
         skew (float, optional): Skew factor. Defaults to 1.0.
@@ -79,17 +106,33 @@ def skew_gaus_pulse(t: np.ndarray, skew: float = 1.0, sigma: float = 1.0, FWHM: 
         FWHM (float, optional): Full width at half maximum. Defaults to None.
         rf (float, optional): Radio frequency. Defaults to None.
         BW (float, optional): Bandwidth. Defaults to 1.
-    
+        phase_shift (float, optional): Phase shift in degrees. Defaults to 0.0.
+        phase_freq (float, optional): Frequency in Hz for phase shift calculation. Defaults to None.
+
     Returns:
-        tuple[np.ndarray, float]: Skewed Gaussian pulse and its standard deviation.
+        np.ndarray: Skewed Gaussian pulse with optional phase shift.
     """
-    gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW)
-    skew_factor = (1 - erf(-1 * (skew * t / (np.sqrt(2) * s))))
+    t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
+    t = t - t_shift
+    gaus = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
+    # Calculate the skew factor using the error function
+    skew_factor = 1 - erf(-1 * (skew * t / (np.sqrt(2) * sigma)))
+    # Apply the skew factor to the Gaussian pulse
     skewed_pulse = gaus * skew_factor
-    return skewed_pulse / np.max(skewed_pulse), s
+    # Normalize the skewed pulse to have a maximum amplitude of 1
+    return skewed_pulse / np.max(skewed_pulse)
+
 
 # --- Create Gaussian Doublet
-def gaus_doublet_pulse( t: np.ndarray, sigma: float = 1.0, FWHM: float = None, rf: float = None, BW: float = 1, skew: float = 1.0) -> tuple[np.ndarray, float]:
+def gaus_doublet_pulse( 
+        t: np.ndarray, 
+        sigma: float = 1.0, 
+        FWHM: float = None, 
+        rf: float = None, 
+        BW: float = 1, 
+        phase_shift: float = 0.0, 
+        phase_freq: float = None,
+) -> np.ndarray:
     """Generate a Gaussian doublet pulse.
     
     Args:
@@ -98,13 +141,16 @@ def gaus_doublet_pulse( t: np.ndarray, sigma: float = 1.0, FWHM: float = None, r
         FWHM (float, optional): Full width at half maximum. Defaults to None.
         rf (float, optional): Radio frequency. Defaults to None.
         BW (float, optional): Bandwidth. Defaults to 1.
-        skew (float, optional): Skew factor. Defaults to 1.0.
+        phase_shift (float, optional): Phase shift in degrees. Defaults to 0.0.
+        phase_freq (float, optional): Frequency in Hz for phase shift calculation. Defaults to None.
     
     Returns:
-        tuple[np.ndarray, float]: Gaussian doublet pulse and its standard deviation.
+       np.ndarray: Gaussian doublet pulse with optional phase shift.
     """
-    gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW)
-    return (-1*t/sigma**2)*gaus, s
+    t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
+    t = t - t_shift
+    gaus = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
+    return (-1*t/sigma**2)*gaus
 
 # --- Create a Morlet Wavelet
 def morlet_pulse(t: np.ndarray, f: float = 1.0, sigma: float = 1.0) -> np.ndarray:
@@ -141,37 +187,60 @@ def damped_sine_wave(t: np.ndarray, t0: float = 0.0, freq: float = 1.0, decay: f
     return amp*dswn
 
 # --- Create a Cosine Square Pulse 
-def cosine_square_pulse(t: np.ndarray, pulse_width: float, pw_type: str = 'fixed', amplitude: float = 1.0, phi: float = 0) -> np.ndarray:
-    """Generate a cosine square pulse.
-    
+def cosine_square_pulse(
+    t: np.ndarray,
+    pulse_width: float,
+    pw_type: str = 'fixed',
+    amplitude: float = 1.0,
+    phase_freq: float = None,
+    phase_shift: float = 0.0,
+    degrees: bool = False
+) -> np.ndarray:
+    """
+    Generate a cosine-squared pulse with optional frequency-based phase shift.
+
     Args:
         t (np.ndarray): Time array.
-        pulse_width (float): Pulse width in seconds. Width is configurable by optional argument `pw_type`.
-        amplitude (float, optional): Amplitude of the pulse. Defaults to 1.0. 
-        phi (float, optional): Signal phase in degrees. Defaults to 0.
-        pw_type (str, optional): Pulse width type. Defaults to 'fixed'.
-    
+        pulse_width (float): Pulse width in seconds.
+        pw_type (str, optional): Pulse width type. 'fixed', 'fwhm', or 'rms'. Defaults to 'fixed'.
+        amplitude (float, optional): Amplitude of the pulse. Defaults to 1.0.
+        phase_freq (float, optional): Frequency in Hz for phase shift calculation. If None, uses internal cosine width.
+        phase_shift (float, optional): Phase shift (in degrees if degrees=True, else in radians).
+        degrees (bool, optional): Whether phase_shift is in degrees. Defaults to False.
+
     Returns:
-        np.ndarray: Cosine square pulse.
+        np.ndarray: Cosine-squared pulse.
     """
-    # --- Determine the pulse width based on input arguments
-    pwType = pw_type.lower()
-    if pwType == 'fwhm':
-        period = ( pulse_width / (2 * np.sqrt(2 * np.log(2)) ) ) * 7.0 # Convert to RMS then to 99.99% width
-    elif pwType == 'rms':
-        period = pulse_width * 7.0       # Convert to 99.99% width
+    # Convert width to full extent (99.99%)
+    pw_type = pw_type.lower()
+    if pw_type == 'fwhm':
+        period = (pulse_width / (2 * np.sqrt(2 * np.log(2)))) * 7.0
+    elif pw_type == 'rms':
+        period = pulse_width * 7.0
     else:
         period = pulse_width
-    
-    # --- Create the cosine square pulse
-    cos_phi = phi*(np.pi/180)
-    cos = np.cos((2*np.pi*t)/period+(np.pi+cos_phi))
-    cos_sq = (cos-1)**2
-    cos_sq /= cos_sq.max()   # Normalize the pulse to its maximum value
-    tshift = -1*(cos_phi/(2*np.pi))*period
-    cos_sq[ t > tshift+(0.5*period) ] = 0.0
-    cos_sq[ t < tshift+(-0.5*period) ] = 0.0
-    return cos_sq * amplitude
+
+    # Handle phase shift
+    phase = np.deg2rad(phase_shift) if degrees else phase_shift
+
+    # Frequency-based phase shift (adjust waveform in time)
+    if phase_freq is not None:
+        # time shift = phase / (2πf)
+        t_shift = -phase / (2 * np.pi * phase_freq)
+    else:
+        # fallback: use phase shift relative to pulse width period
+        t_shift = -phase / (2 * np.pi) * period
+
+    # Cosine-squared profile
+    cos_arg = (2 * np.pi * (t - t_shift)) / period + np.pi
+    waveform = (np.cos(cos_arg) - 1) ** 2
+    waveform /= np.max(waveform)
+
+    # Apply windowing to keep only inside ±0.5*period
+    mask = np.abs(t - t_shift) <= (0.5 * period)
+    waveform[~mask] = 0.0
+
+    return amplitude * waveform
 
 # --- Uniform Pulse
 def uniform_pulse(t: np.ndarray, pulse_width: float, pulse_BW: int = 10, amplitude: float = 1.0) -> np.ndarray:
@@ -389,7 +458,7 @@ def mod_cos_sq_pulse(t: np.ndarray, pulse_width: float, baseF: float, modF: floa
     Returns:
         np.ndarray: Modulated cosine square waveform.
     """
-    csp = cosine_square_pulse(t, pulse_width, pw_type=pw_type, amplitude=pulsAmp, phi=phi)
+    csp = cosine_square_pulse(t, pulse_width, pw_type=pw_type, amplitude=pulsAmp, phase_shift=phi, degrees=True)
     csp_sin = np.sin((baseF)*2*np.pi*t)
     
     mod_sin = modAmp*np.sin((modF)*2*np.pi*t)
@@ -511,6 +580,133 @@ def create_pulse_train_jitter(rf: float, pulse: np.ndarray, pulse_time: np.ndarr
 
 # -------------------------------- Other ------------------------------------- #
 
+def split_pulse_1_to_4( 
+        rf:List[float],      # -- Expecting three RF frequencies, can be initial RF freq only
+        bunch_length:List[float],   # -- Expecting bunch lengths in seconds, can be single value for initial
+        split_steps:int=1000,
+        bunch_shape:str="cos", 
+        pw_type:str="rms", 
+        dt:float=1e-12,
+        ):
+    # --- Constants
+    num_bunches = 4
+    num_splits = 2
+
+    # --- Create Time array
+    if isinstance(rf, (list, tuple, np.ndarray)): 
+        base_rf = min(rf)
+        rf_group = rf
+    else:  
+        base_rf = rf
+        rf_group = [base_rf, base_rf*2, base_rf*2]
+    
+    time_resolution = int( (2/(np.pi*base_rf)) // dt )
+    time_resolution = max(time_resolution, 1000)
+
+    test_time = np.linspace(-3/(2*np.pi*base_rf), 3/(2*np.pi*base_rf), time_resolution)
+
+    # --- Phase steps
+    dphi = 90/split_steps
+
+    # --- Bunch lengths
+    if isinstance(bunch_length, (list, tuple, np.ndarray)):
+        init_bunch_length = bunch_length[0]
+        split1_bl = bunch_length[1]
+        split2_bl = bunch_length[2]
+    else:
+        init_bunch_length = bunch_length
+        split1_bl = init_bunch_length/1.15
+        split2_bl = split1_bl/1.15
+
+    # --- Create bunches
+    sig_test = []
+    for i, f in enumerate(rf_group):
+        for turns in range(split_steps):
+            phase_shift = dphi*turns
+            frame_signal = np.zeros(test_time.size,dtype=np.float64)
+
+            # --- Break after 2 splits
+            if i >= num_splits: break
+            
+            # --- Initial pulse
+            if i == 0 and phase_shift < 45:
+                init = _pulse_waveform( test_time, init_bunch_length, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f)
+                frame_signal += init * _smooth_weight_on_phase(phase_shift, shift_quotient=45.0, max_weight=0.0, increase=False)
+
+            # --- Splits 
+            if i in [0,1]:
+                centers_2 = [phase_shift, -1*phase_shift] if i == 0 else [180, -180]
+                center_4 = [180+phase_shift,-180+phase_shift,180-phase_shift,-180-phase_shift] if i == 1 else [phase_shift, -1*phase_shift, phase_shift, -1*phase_shift]
+                amp_factor = _smooth_weight_on_phase(phase_shift, shift_quotient=270.0,max_weight=1.167)
+                amp_decay = 1.167*_smooth_weight_on_phase(phase_shift, shift_quotient=45.0, max_weight=0.0, increase=False)
+                amplitude = amp_factor if i == 0 else amp_decay
+                # --- Split 1
+                for center in centers_2:
+                    split = _pulse_waveform( test_time, split1_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
+                    frame_signal += split * amplitude
+                # --- Split 2
+                for center in center_4:
+                    split = _pulse_waveform( test_time, split2_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
+                    frame_signal += split *_smooth_weight_on_phase(phase_shift)
+
+            sig_test.append( frame_signal )
+            
+    return np.array(sig_test), test_time
+
+def _smooth_weight_on_phase(phase_shift, shift_quotient=90.0, limit=45.0, max_weight=1.5, increase=True):
+    """
+    Calculate a weight factor based on phase shift and other parameters.
+
+    Args:
+        phase_shift (float): The phase shift value.
+        shift_quotient (float, optional): The divisor used to scale the phase shift. Defaults to 90.0.
+        limit (float, optional): The phase shift limit beyond which the weight is capped. Defaults to 45.0.
+        max_weight (float, optional): The maximum weight value returned when the phase shift exceeds the limit. Defaults to 1.5.
+        increase (bool, optional): Determines the direction of weight calculation. If True, weight increases with phase 
+            shift; otherwise, it decreases. Defaults to True.
+
+    Returns:
+        float: The calculated weight factor based on the specified phase shift and parameters.
+    """
+
+    if increase:
+        return (1 + phase_shift / shift_quotient) if phase_shift < limit else max_weight
+    else:
+        return (1 - phase_shift / shift_quotient) if phase_shift < limit else max_weight
+
+# --- Helper function - select pulse waveform
+def _pulse_waveform( 
+        test_time: np.ndarray, 
+        bunch_shape: str="cos",
+        **kwargs 
+)->np.ndarray:
+    """
+    Generate a pulse waveform based on the given shape and parameters.
+
+    Args:
+        test_time (np.ndarray): Time array.
+        bunch_shape (str, optional): Shape of the pulse. Options are "cos", "gauss", "skew_gauss", "doublet", "morlet", "damped", "square", "uniform", "triangle". Defaults to "cos". 
+        **kwargs: Additional keyword arguments for specific pulse shapes.
+
+    Returns:
+        np.ndarray: The generated pulse waveform.
+    """
+    sig = {
+        "cos": cosine_square_pulse,
+        "gauss": gaussian_pulse,
+        "skew_gauss": skew_gaus_pulse,
+        "doublet": gaus_doublet_pulse,
+        "morlet": morlet_pulse,
+        "damped": damped_sine_wave,
+        "square": square_pulse,
+        "uniform": uniform_pulse,
+        "triangle": triangle_pulse,
+    }
+    if bunch_shape in sig.keys():
+        return sig[bunch_shape]( test_time, **kwargs )
+    else:
+        raise ValueError(f"Invalid bunch shape: {bunch_shape}")
+
 # --- Calculate RMS Pulse Width
 def calculate_pulse_width(pulse_sig: np.ndarray, tp: float) -> float:
     """Calculate the pulse width of a given pulse signal.
@@ -605,7 +801,7 @@ def gaus_smooth(sig: np.ndarray, FWHM: float, win_size: int, debug: bool = False
     
     return smooth_sig
 
-def gamma_to_beta(gamma):
+def gamma_to_beta(gamma: Union[float, np.ndarray])->float:
     """
     Convert Lorentz factor gamma to velocity ratio beta = v/c.
 
@@ -620,6 +816,8 @@ def gamma_to_beta(gamma):
         raise ValueError("Gamma must be >= 1")
     beta = np.sqrt(1 - 1 / gamma**2)
     return beta
+
+
 
 # ------------------- Plotting functions ------------------- #
 def plot_gaus_pulses(
@@ -755,14 +953,32 @@ def plot_gaus_compare( org, flt, lbl):
     plt.show() 
 
 # --- Waterfall plot generator
-def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50, time_array: np.ndarray = None) -> None:
+def waterfall_plot(
+    waveforms: list[np.ndarray],
+    time_array: np.ndarray,
+    num_waveforms_to_plot: int = 50,
+    amplitude_scaling: int = 5,
+    title: str = "Waterfall Plot of Waveforms",
+    xlim: tuple[float, float] = None,
+    ylim: tuple[float, float] = None,
+    xlabel: str = "Time (Samples)",
+    ylabel: str = "Amplitude + Offset",
+    figsize: tuple[int, int] = (10, 6),
+    **kwargs
+) -> None:
     """
     Creates a waterfall plot of a subset of waveforms from a list.
 
     Args:
         waveforms: A list of numpy arrays, where each array represents a waveform.
+        time_array: A numpy array representing the time values for the waveforms.
         num_waveforms_to_plot: The number of evenly spaced waveforms to display.
-        time_array: An optional array of time values for the waveforms.
+        title: The title of the plot.
+        xlim: The x-axis limits (tuple of two floats).
+        ylim: The y-axis limits (tuple of two floats).
+        xlabel: The x-axis label.
+        ylabel: The y-axis label.
+        figsize: The figure size (tuple of two ints).
 
     Raises:
         ValueError: If num_waveforms_to_plot exceeds the total number of waveforms.
@@ -779,18 +995,75 @@ def waterfall_plot(waveforms: list[np.ndarray], num_waveforms_to_plot: int = 50,
     indices = np.linspace(0, num_total_waveforms - 1, num_waveforms_to_plot, dtype=int)
     selected_waveforms = [waveforms[i] for i in indices]
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=figsize)
 
     for i, waveform in enumerate(selected_waveforms):
-        if time_array is not None:
-            time = np.arange(len(waveform))  # Assuming time is just sample index.
-        else:
-            time = np.array(time_array)
-        plt.plot(time, waveform + i * 5, linewidth=0.75, color='b') # Add offset to each waveform
+        plt.plot(time_array, waveform + i * amplitude_scaling, linewidth=0.75, color='darkblue', **kwargs) # Add offset to each waveform
 
-    plt.title("Waterfall Plot of Waveforms")
-    plt.xlabel("Time (Samples)")
-    plt.ylabel("Amplitude + Offset")
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    if xlim:
+        plt.xlim(xlim)
+    if ylim:
+        plt.ylim(ylim)
     plt.grid(True, linestyle='--', alpha=0.4)
     plt.tight_layout()
+    plt.show()
+
+def animate_bunch_splitting(
+    waveforms: list[np.ndarray],
+    time_array: np.ndarray,
+    title: str = "Waterfall Plot of Waveforms",
+    xlim: tuple[float, float] = None,
+    ylim: tuple[float, float] = None,
+    xlabel: str = "Samples",
+    ylabel: str = "Amplitude |a.u.|",
+    save_file: str = None,
+    **kwargs
+) -> None:
+    """
+    Animate a set of waveforms by plotting each waveform in sequence.
+
+    Parameters
+    ----------
+    waveforms : list of numpy arrays
+        The list of waveforms to animate.
+    time_array : numpy array
+        The time array to use for the x-axis of the plot.
+    title : str, optional
+        The title of the plot.
+    xlim : tuple of two floats, optional
+        The x-axis limits.
+    ylim : tuple of two floats, optional
+        The y-axis limits.
+    xlabel : str, optional
+        The x-axis label.
+    ylabel : str, optional
+        The y-axis label.
+    save_file : str, optional
+        The file path to save the animation to. If not provided, the animation is displayed but not saved.
+
+    Returns
+    -------
+    None
+    """
+    fig, ax = plt.subplots()
+    line, = ax.plot(time_array, waveforms[0], **kwargs)
+    if xlim:
+        ax.set_xlim(xlim)
+    if ylim:
+        ax.set_ylim(ylim)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+    def update(frame):
+        line.set_ydata(waveforms[frame])
+        return line,
+
+    ani = animation.FuncAnimation(fig, update, frames=len(waveforms), interval=50, blit=True)
+    if save_file:
+        ani.save(save_file, writer="pillow", fps=20)
+
     plt.show()

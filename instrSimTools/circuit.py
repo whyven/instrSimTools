@@ -1,14 +1,26 @@
 import itertools
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from typing import Union, Dict, Tuple, List
+
+# --- Scipy imports
 from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit, leastsq
 import scipy.signal as sg
 import scipy.constants as const
 from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
-import matplotlib.pyplot as plt
+
+# --- Scikit-RF imports
 import skrf as rf
+
+# --- SPICE-Lab imports
+from spicelib import SimRunner, AscEditor, RawRead
+from spicelib.log.ltsteps import LTSpiceLogReader
+from spicelib.simulators.ltspice_simulator import LTspice
+from pathlib import Path
+
 
 # --- Constants
 XLABEL = "Frequency (Hz)"
@@ -505,3 +517,121 @@ def measure_3db_bandwidth( ntwk ):
 	f_low = freq[indices[0]]
 	f_high = freq[indices[-1]]
 	return f_high - f_low, f_low, f_high, max_db
+
+# -----------
+def prepare_output_folder(path: str, folder_name: str = "batch_output") -> Path:
+    """
+    Create and return the output folder path for simulation results.
+
+    Args:
+        path (str): Base directory path where the folder will be created.
+        folder_name (str, optional): Name of the output subdirectory. Defaults to 'batch_output'.
+
+    Returns:
+        Path: Full path to the created (or existing) output folder.
+    """
+    output_path = Path(path) / folder_name
+    output_path.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+def setup_simulation(
+    asc_path: str,
+    output_path: Union[str, Path],
+    default_params: Dict[str, float],
+    instructions: List[str] = None
+) -> Tuple[SimRunner, AscEditor]:
+    """
+    Initialize and configure the LTspice simulation with default parameters.
+
+    Args:
+        asc_path (str): Path to the .asc LTSpice schematic file.
+        output_path (Union[str, Path]): Folder where output will be stored.
+        default_params (Dict[str, float]): Dictionary of component parameters to set in the circuit.
+        instructions (List[str], optional): Additional SPICE instructions to add to the simulation.
+
+    Returns:
+        Tuple[SimRunner, AscEditor]: Configured SimRunner and AscEditor objects.
+    """
+    runner = SimRunner(simulator=LTspice, output_folder=output_path)
+    editor = AscEditor(asc_path)
+
+    editor.set_parameters(**default_params)
+    if instructions:
+        editor.add_instructions(*instructions)
+    editor.set_parameter('run', 0)
+    return runner, editor
+
+def generate_waveforms(
+    time_ary: np.ndarray,
+    signal_dict: Dict[str, np.ndarray],
+    output_dir: str
+) -> Dict[str, str]:
+    """
+    Export a dictionary of waveforms to PWL files for SPICE simulation.
+
+    Args:
+        time_ary (np.ndarray): Time array corresponding to the waveforms.
+        signal_dict (Dict[str, np.ndarray]): Dictionary of waveforms keyed by name.
+        output_dir (str): Path where waveform files should be saved.
+
+    Returns:
+        Dict[str, str]: Dictionary mapping waveform names to saved file paths.
+    """
+    from spicelib.helpers import export_to_spice_pwl  # Local import for compatibility
+
+    wave_paths = {}
+    spice_time = time_ary - time_ary[0]
+
+    for key, waveform in signal_dict.items():
+        file_path = os.path.join(output_dir, f"Waveform_{key}.txt")
+        export_to_spice_pwl(spice_time, waveform, file_path)
+        wave_paths[key] = file_path
+
+    return wave_paths
+
+def run_batch_simulations(
+    runner: SimRunner,
+    editor: AscEditor,
+    waveforms: Dict[str, str],
+    use_alt_solver: bool = True
+) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    Run batch LTSpice simulations with each input waveform and collect results.
+
+    Args:
+        runner (SimRunner): SimRunner object for executing simulations.
+        editor (AscEditor): AscEditor object used to modify and control the simulation.
+        waveforms (Dict[str, str]): Dictionary mapping waveform names to PWL file paths.
+        use_alt_solver (bool, optional): Whether to use the alternate SPICE solver (-alt). Defaults to True.
+
+    Returns:
+        Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]: 
+            Dictionary keyed by waveform name with values being tuples of (time, V(wcm_in), V(wcm_out)).
+    """
+    results = {}
+
+    # Ensure consistent transient setup
+    editor.remove_Xinstruction(r"\.TRAN.*")
+    editor.add_instructions(".TRAN 1p 100n 0 10p")
+
+    for key, waveform_path in waveforms.items():
+        print(f"Simulating response to: {key}")
+        editor['I1']['Value'] = f"PWL SCOPEDATA={waveform_path}"
+        opts = ['-alt'] if use_alt_solver else ['-norm']
+        runner.run(editor, switches=opts, exe_log=True)
+
+    # Read results
+    for raw, log in runner:
+        print(f"Raw file: {raw}, Log file: {log}")
+        raw_data = RawRead(raw)
+        x = raw_data.get_wave('time')
+        y1 = raw_data.get_wave('V(wcm_in)')
+        y2 = raw_data.get_wave('V(wcm_out)')
+        waveform_id = str(raw)[-1]  # adjust this if needed for unique names
+        results[waveform_id] = (x, y1, y2)
+
+        # Optional: parse log data
+        log_data = LTSpiceLogReader(log)
+
+    print(f"Successful/Total Simulations: {runner.okSim}/{runner.runno}")
+    return results
