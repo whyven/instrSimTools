@@ -82,7 +82,7 @@ def gaussian_pulse(
         ref = np.power(10.0, -6 / 20.0)
         a = -(np.pi * rf * BW) ** 2 / (4.0 * np.log(ref))
         yenv = np.exp(-a * t**2)
-        return yenv / np.max(yenv)
+        return yenv / np.max(yenv), calculate_pulse_width(yenv,t[1]-t[0])
 
 
 # --- Create a Skew-Gaussian Pulse
@@ -112,12 +112,12 @@ def skew_gaus_pulse(
     Returns:
         np.ndarray: Skewed Gaussian pulse with optional phase shift.
     """
+    gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
+    # include time shift
     t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
     t = t - t_shift
-    gaus = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
-    print(gaus)
     # Calculate the skew factor using the error function
-    skew_factor = 1 - erf(-1 * (skew * t / (np.sqrt(2) * sigma)))
+    skew_factor = 1 - erf(-1 * (skew * t / (np.sqrt(2) * s)))
     # Apply the skew factor to the Gaussian pulse
     skewed_pulse = gaus * skew_factor
     # Normalize the skewed pulse to have a maximum amplitude of 1
@@ -148,27 +148,51 @@ def gaus_doublet_pulse(
     Returns:
        np.ndarray: Gaussian doublet pulse with optional phase shift.
     """
+    gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
     t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
     t = t - t_shift
-    gaus = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
-    return (-1*t/sigma**2)*gaus
+    sig = (-1*t/s**2)*gaus
+    return sig / np.max( sig )
 
 # --- Create a Morlet Wavelet
-def morlet_pulse(t: np.ndarray, f: float = 1.0, sigma: float = 1.0) -> np.ndarray:
+def morlet_pulse(
+        t: np.ndarray, 
+        f: float = 1.0, 
+        sigma: float = 1.0,
+        FWHM: float = None, 
+        rf: float = None, 
+        BW: float = 1, 
+        phase_shift: float = 0.0, 
+        phase_freq: float = None,
+) -> np.ndarray:
     """Generate a Morlet wavelet.
     
     Args:
         t (np.ndarray): Time array.
         f (float, optional): Frequency of the wavelet. Defaults to 1.0.
         sigma (float, optional): Standard deviation. Defaults to 1.0.
+        FWHM (float, optional): Full width at half maximum. Defaults to None.
+        rf (float, optional): Radio frequency. Defaults to None.
+        BW (float, optional): Bandwidth. Defaults to 1.
+        phase_shift (float, optional): Phase shift in degrees. Defaults to 0.0.
+        phase_freq (float, optional): Frequency in Hz for phase shift calculation. Defaults to None.
     
     Returns:
         np.ndarray: Morlet wavelet.
     """
-    return np.cos(2 * np.pi * f * t) * gaussian_pulse(t, sigma)[0]
+    gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
+    sig = np.cos(2 * np.pi * f * t) * gaus
+    return sig / np.max( abs( sig ) )
 
 # --- Create a Damped Sine Wave
-def damped_sine_wave(t: np.ndarray, t0: float = 0.0, freq: float = 1.0, decay: float = 1.0, amp: float = 1.0, phi: float = 0.0) -> np.ndarray:
+def damped_sine_wave(
+        t: np.ndarray, 
+        t0: float = 0.0, 
+        freq: float = 1.0, 
+        decay: float = 1.0, 
+        amp: float = 1.0, 
+        phi: float = 0.0
+) -> np.ndarray:
     """Generate a damped sine wave.
     
     Args:
@@ -717,12 +741,12 @@ def calculate_pulse_width(pulse_sig: np.ndarray, tp: float) -> float:
         tp (float): Time period.
     
     Returns:
-        float: Calculated RMS pulse width in nanoseconds.
+        float: Calculated RMS pulse width in seconds.
     """
     peaks, _ = sg.find_peaks(pulse_sig)
     half = sg.peak_widths(pulse_sig, peaks)
     pulse_width = (half[0] / (2 * np.sqrt(2 * np.log(2))))[0]
-    return pulse_width * tp * 1e9
+    return pulse_width * tp
 
 # --- Calculate signal spectrum
 def get_spectrum(sig: np.ndarray, Fs: float) -> tuple[np.ndarray, np.ndarray]:
