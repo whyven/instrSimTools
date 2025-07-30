@@ -115,6 +115,7 @@ def skew_gaus_pulse(
     t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
     t = t - t_shift
     gaus = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
+    print(gaus)
     # Calculate the skew factor using the error function
     skew_factor = 1 - erf(-1 * (skew * t / (np.sqrt(2) * sigma)))
     # Apply the skew factor to the Gaussian pulse
