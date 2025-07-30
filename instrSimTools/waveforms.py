@@ -84,7 +84,6 @@ def gaussian_pulse(
         yenv = np.exp(-a * t**2)
         return yenv / np.max(yenv), calculate_pulse_width(yenv,t[1]-t[0])
 
-
 # --- Create a Skew-Gaussian Pulse
 def skew_gaus_pulse(
     t: np.ndarray,
@@ -122,7 +121,6 @@ def skew_gaus_pulse(
     skewed_pulse = gaus * skew_factor
     # Normalize the skewed pulse to have a maximum amplitude of 1
     return skewed_pulse / np.max(skewed_pulse)
-
 
 # --- Create Gaussian Doublet
 def gaus_doublet_pulse( 
@@ -576,32 +574,46 @@ def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bun
 
 # --- Create a Pulse Train with Jitter
 #TODO pulse train jitter
-def create_pulse_train_jitter(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bunches: int, jitter: float) -> tuple[np.ndarray, np.ndarray]:
-    """UNDER DEVELOPMENT. Generate a train of pulses with jitter.  
+def create_pulse_train_jitter(
+    rf: float,
+    bunches: int,
+    pulse_width: float,
+    phase_noise: float = 0.0,
+    pulse_type: str = "cos",
+    dt: float = 100e-12,
+    pad_begin: int = None,
+    pad_end: int = None,
+    **kwargs,
+) -> tuple[np.ndarray, np.ndarray]:
+
+    # --- Create Time Array
+    time_resolution = int( (1/rf) // dt )
+    time_resolution = max( time_resolution, 1000 )
+
+    test_time = np.linspace( -0.5/rf, 0.5/rf, time_resolution )
+    dtt = test_time[1] - test_time[0]
+
+    # --- Check for padding
+    if pad_begin:
+        sig = np.zeros( test_time.size, dtype=float )
+        strt = 0
+    else: 
+        pn = np.random.uniform( -1*phase_noise, phase_noise )
+        sig = pulse_waveform( test_time, pulse_width, bunch_shape=pulse_type, phase_shift=pn, phase_freq=rf, **kwargs )
+        strt = 1
     
-    Args:
-        rf (float): Radio frequency of pulses.
-        pulse (np.ndarray): Single pulse waveform.
-        pulse_time (np.ndarray): Time array for a single pulse.
-        bunches (int): Number of pulses in the train.
-        jitter (float): Jitter in seconds.
+    # --- Build pulse train
+    for n in range(strt, bunches):
+        pn = np.random.uniform( -1*phase_noise, phase_noise )
+        temp = pulse_waveform( test_time, pulse_width, bunch_shape=pulse_type, phase_shift=pn, phase_freq=rf, **kwargs)
+        sig = np.concatenate( (sig, temp) )
     
-    Returns:
-        tuple[np.ndarray, np.ndarray]: Time array and pulse train waveform.
-    """
-    Fs = 1 / (pulse_time[1] - pulse_time[0])
-    pulse_period = 1 / rf
-    temp = pulse[pulse_time > -pulse_period / 2]
-    temp = temp[pulse_time < pulse_period / 2]
-    pulse_ary = np.concatenate((np.zeros(temp.size), temp))
-    for _ in range(bunches - 1):
-        pulse_ary = np.concatenate((pulse_ary, temp))
-    pulse_ary = np.concatenate((pulse_ary, np.zeros(temp.size)))
-    ''' NEED TO ADJUST HERE - try moving up in the function '''
-    jitter = int(jitter * Fs)
+    # --- Check for padding
+    if pad_end:
+        temp = np.zeros(test_time.size, dtype=float)
+        sig = np.concatenate( (sig, temp) )    
     
-    pulse_ary = np.roll(pulse_ary, jitter)
-    return np.linspace(0.0, pulse_ary.size / Fs, pulse_ary.size), pulse_ary
+    return np.linspace( 0.0, sig.size * dtt, sig.size ), sig
 
 # -------------------------------- Other ------------------------------------- #
 
@@ -655,7 +667,7 @@ def split_pulse_1_to_4(
             
             # --- Initial pulse
             if i == 0 and phase_shift < 45:
-                init = _pulse_waveform( test_time, init_bunch_length, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f)
+                init = pulse_waveform( test_time, init_bunch_length, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f)
                 frame_signal += init * _smooth_weight_on_phase(phase_shift, shift_quotient=45.0, max_weight=0.0, increase=False)
 
             # --- Splits 
@@ -667,11 +679,11 @@ def split_pulse_1_to_4(
                 amplitude = amp_factor if i == 0 else amp_decay
                 # --- Split 1
                 for center in centers_2:
-                    split = _pulse_waveform( test_time, split1_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
+                    split = pulse_waveform( test_time, split1_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
                     frame_signal += split * amplitude
                 # --- Split 2
                 for center in center_4:
-                    split = _pulse_waveform( test_time, split2_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
+                    split = pulse_waveform( test_time, split2_bl, bunch_shape=bunch_shape, pw_type=pw_type, phase_freq=f, phase_shift=center, degrees=True )
                     frame_signal += split *_smooth_weight_on_phase(phase_shift)
 
             sig_test.append( frame_signal )
@@ -700,8 +712,9 @@ def _smooth_weight_on_phase(phase_shift, shift_quotient=90.0, limit=45.0, max_we
         return (1 - phase_shift / shift_quotient) if phase_shift < limit else max_weight
 
 # --- Helper function - select pulse waveform
-def _pulse_waveform( 
-        test_time: np.ndarray, 
+def pulse_waveform( 
+        test_time: np.ndarray,
+        bunch_width: float, 
         bunch_shape: str="cos",
         **kwargs 
 )->np.ndarray:
@@ -710,7 +723,7 @@ def _pulse_waveform(
 
     Args:
         test_time (np.ndarray): Time array.
-        bunch_shape (str, optional): Shape of the pulse. Options are "cos", "gauss", "skew_gauss", "doublet", "morlet", "damped", "square", "uniform", "triangle". Defaults to "cos". 
+        bunch_shape (str, optional): Shape of the pulse. Options are "cos", "gauss", "skew_gauss", "doublet", "morlet". Defaults to "cos". 
         **kwargs: Additional keyword arguments for specific pulse shapes.
 
     Returns:
@@ -722,13 +735,9 @@ def _pulse_waveform(
         "skew_gauss": skew_gaus_pulse,
         "doublet": gaus_doublet_pulse,
         "morlet": morlet_pulse,
-        "damped": damped_sine_wave,
-        "square": square_pulse,
-        "uniform": uniform_pulse,
-        "triangle": triangle_pulse,
     }
     if bunch_shape in sig.keys():
-        return sig[bunch_shape]( test_time, **kwargs )
+        return sig[bunch_shape]( test_time, bunch_width, **kwargs )
     else:
         raise ValueError(f"Invalid bunch shape: {bunch_shape}")
 
