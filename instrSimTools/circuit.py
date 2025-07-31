@@ -96,7 +96,6 @@ def pz( x, p, z):
 def p(x,p):
     return 1/(1+((2*np.pi*x)/(2*np.pi*p))**2)
 
-
 # --- 6-pole,5-zero
 def pz_fit_six(init,x):
     return np.sqrt( 
@@ -437,7 +436,6 @@ def convert_lengths(values, from_unit, to_unit: str, show: bool = False):
 
     return results[0] if is_single else results
 
-
 # --- Create a WCM Circuit
 def simple_wcm_circuit( Cb, Cc, Cp, Ls, Lby, Rp, *args, **kwargs ):
 	# --- Initialize the circuit frequency domain
@@ -518,7 +516,9 @@ def measure_3db_bandwidth( ntwk ):
 	f_high = freq[indices[-1]]
 	return f_high - f_low, f_low, f_high, max_db
 
-# -----------
+# ---------------------- SPICE-Lib Scripts ---------------- #
+
+# --- Prepare for SPICE Simulation
 def prepare_output_folder(path: str, folder_name: str = "batch_output") -> Path:
     """
     Create and return the output folder path for simulation results.
@@ -534,6 +534,7 @@ def prepare_output_folder(path: str, folder_name: str = "batch_output") -> Path:
     output_path.mkdir(parents=True, exist_ok=True)
     return output_path
 
+# --- Setup the Simulations
 def setup_simulation(
     asc_path: str,
     output_path: Union[str, Path],
@@ -561,6 +562,7 @@ def setup_simulation(
     editor.set_parameter('run', 0)
     return runner, editor
 
+# --- Create Waveforms for Simulations
 def generate_waveforms(
     time_ary: np.ndarray,
     signal_dict: Dict[str, np.ndarray],
@@ -589,6 +591,7 @@ def generate_waveforms(
 
     return wave_paths
 
+# --- Run Simulations
 def run_batch_simulations(
     runner: SimRunner,
     editor: AscEditor,
