@@ -515,9 +515,15 @@ def mod_pulse_train(t: np.ndarray, rf: float, pulse: np.ndarray, pulse_time: np.
 
 # -------------------------------- Signal Pulse Trains ------------------------------------- #
 
-# --- Create a Pulse Train
-def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bunches: int, pad_train=None) -> tuple[np.ndarray, np.ndarray]:
-    """Generate a train of pulses.
+# --- Create a Pulse Train of Arbitrary Pulses
+def create_arb_pulse_train(
+        rf: float, 
+        pulse: np.ndarray, 
+        pulse_time: np.ndarray, 
+        bunches: int, 
+        pad_train=None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a train of arbitrary pulses. 
     
     Args:
         rf (float): Radio frequency of pulses.
@@ -572,9 +578,8 @@ def create_pulse_train(rf: float, pulse: np.ndarray, pulse_time: np.ndarray, bun
     
     return np.linspace(0.0, pulse_ary.size / Fs, pulse_ary.size), pulse_ary
 
-# --- Create a Pulse Train with Jitter
-#TODO pulse train jitter
-def create_pulse_train_jitter(
+# --- Create a Pulse Train of standard Pulses
+def create_pulse_train(
     rf: float,
     bunches: int,
     pulse_width: float,
@@ -587,6 +592,24 @@ def create_pulse_train_jitter(
 ) -> tuple[np.ndarray, np.ndarray]:
 
     # --- Create Time Array
+    """
+    Generate a pulse train with optional phase noise and padding.
+
+    Args:
+        rf (float): Radio frequency of the pulses.
+        bunches (int): Number of pulses in the train.
+        pulse_width (float): Width of each pulse in seconds.
+        phase_noise (float, optional): Maximum phase noise deviation in degrees. Defaults to 0.0.
+        pulse_type (str, optional): Shape of the pulse. Defaults to 'cos'.
+        dt (float, optional): Time step resolution in seconds. Defaults to 100e-12.
+        pad_begin (int, optional): Number of zero-padded pulses at the beginning. Defaults to None.
+        pad_end (int, optional): Number of zero-padded pulses at the end. Defaults to None.
+        **kwargs: Additional keyword arguments for pulse waveform generation.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Time array and pulse train waveform.
+    """
+
     time_resolution = int( (1/rf) // dt )
     time_resolution = max( time_resolution, 1000 )
 
@@ -774,23 +797,6 @@ def get_spectrum(sig: np.ndarray, Fs: float) -> tuple[np.ndarray, np.ndarray]:
 
     return f, yf
 
-# --- Export to SPICE PWL
-def export_to_spice_pwl(time_array: np.ndarray, value_array: np.ndarray, filename: str) -> None:
-    """
-    Exports time and value arrays into a text file formatted for SPICE PWL.
-
-    Args:
-        time_array (np.ndarray): Array representing time values.
-        value_array (np.ndarray): Array representing source values.
-        filename (str): Name of the output file.
-    """
-    if len(time_array) != len(value_array):
-        raise ValueError("Time array and value array must have the same length.")
-
-    with open(filename, 'w') as file:
-        for t, v in zip(time_array, value_array):
-            file.write(f"{t}\t{v}\n")
-
 # --- Gaussian Smoothing
 def gaus_smooth(sig: np.ndarray, FWHM: float, win_size: int, debug: bool = False) -> np.ndarray:
     """Apply Gaussian smoothing to a signal.
@@ -852,252 +858,3 @@ def gamma_to_beta(gamma: Union[float, np.ndarray])->float:
     return beta
 
 
-
-# ------------------- Plotting functions ------------------- #
-def plot_gaus_pulses(
-    t: np.ndarray,
-    pulses: Union[Dict[str, np.ndarray], np.ndarray],
-    freq: np.ndarray,
-    pulse_spec: Union[Dict[str, np.ndarray], np.ndarray],
-    title: str = None,
-    ax1_xlabel: str = None,
-    ax1_ylabel: str = None,
-    ax1_xlim: Tuple[float, float] = None,
-    ax1_ylim: Tuple[float, float] = None,
-    ax2_xlabel: str = None,
-    ax2_ylabel: str = None,
-    ax2_xlim: Tuple[float, float] = None,
-    ax2_ylim: Tuple[float, float] = None,
-    grid: bool = True,
-    legend: bool = True,
-    loglog: bool = False,
-    figsize: Tuple[int, int] = (8, 6),
-    dpi: int = 100,
-    **kwargs
-) -> None:
-    """
-    Plot Gaussian pulses in time and frequency domains.
-
-    Parameters:
-    t (np.ndarray): Time array
-    pulses (Union[Dict[str, np.ndarray], np.ndarray]): Dictionary of pulse values or single pulse array
-    freq (np.ndarray): Frequency array
-    pulse_spec (Union[Dict[str, np.ndarray], np.ndarray]): Dictionary of pulse spectra or single pulse spectrum array
-    title (str, optional): Plot title. Defaults to None.
-    ax1_xlabel (str, optional): X-axis label for time plot. Defaults to None.
-    ax1_ylabel (str, optional): Y-axis label for time plot. Defaults to None.
-    ax1_xlim (Tuple[float, float], optional): X-axis limits for time plot. Defaults to None.
-    ax1_ylim (Tuple[float, float], optional): Y-axis limits for time plot. Defaults to None.
-    ax2_xlabel (str, optional): X-axis label for frequency plot. Defaults to None.
-    ax2_ylabel (str, optional): Y-axis label for frequency plot. Defaults to None.
-    ax2_xlim (Tuple[float, float], optional): X-axis limits for frequency plot. Defaults to None.
-    ax2_ylim (Tuple[float, float], optional): Y-axis limits for frequency plot. Defaults to None.
-    grid (bool, optional): Show grid. Defaults to True.
-    legend (bool, optional): Show legend. Defaults to True.
-    loglog (bool, optional): Use log-log scale for frequency plot. Defaults to False.
-    figsize (Tuple[int, int], optional): Figure size. Defaults to (8, 6).
-    dpi (int, optional): Figure DPI. Defaults to 100.
-    **kwargs: Additional keyword arguments for plot customization
-
-    Returns:
-    None
-    """
-    tt = t*1e9  # Convert time to nanoseconds
-    ff = freq*1e-9  # Convert frequency to GHz
-
-    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=figsize, dpi=dpi)
-
-    if isinstance(pulses, dict):
-        for p in pulses.keys():
-            # sigma = calculate_pulse_width(pulses[p], t[1] - t[0]) / 1e9
-            # ax1.plot(tt, pulses[p], label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-            ax1.plot(tt, pulses[p], label=p)
-            if loglog:
-                ax2.loglog(ff, np.abs(pulse_spec[p]), label=p)
-                        #    label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-                            
-            else:
-                ax2.plot(ff, np.abs(pulse_spec[p]),label=p)
-                        #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-    else:
-        # sigma = calculate_pulse_width(pulses, t[1] - t[0]) / 1e9
-        ax1.plot(tt, pulses, )
-                #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-        if loglog:
-            ax2.loglog(ff, np.abs(pulse_spec), )
-                    #    label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-        else:
-            ax2.plot(ff, np.abs(pulse_spec), )
-                    #  label=label or f"$\\sigma$={sigma*const.c*100:.2f}cm")
-            
-    ax1.grid(axis="both", which="both" if grid else "none", ls='--', lw=0.5, color='gray')
-    ax1.set_xlabel(ax1_xlabel or "Time [ns]")
-    ax1.set_ylabel(ax1_ylabel or "Normalized Amplitude")
-    ax1.set_title(title+", Time" or 'Ideal Beam Pulse, Time')
-    if ax1_xlim:
-        ax1.set_xlim(ax1_xlim)
-    if ax1_ylim:
-        ax1.set_ylim(ax1_ylim)
-    if legend:
-        ax1.legend()
-
-    ax2.grid(axis="both", which="both" if grid else "none", ls='--', lw=0.5, color='gray')
-    ax2.set_xlabel(ax2_xlabel or "Freq [GHz]")
-    ax2.set_ylabel(ax2_ylabel or "Magnitude")
-    ax2.set_title(title+", Freq" or 'Ideal Beam Pulse, Freq.')
-    if ax2_xlim:
-        ax2.set_xlim(ax2_xlim)
-    if ax2_ylim:
-        ax2.set_ylim(ax2_ylim)
-    if legend:
-        ax2.legend()
-
-    plt.tight_layout()
-    plt.show()
-
-# --- More Fancy Plotting
-#TODO : Clean up - This compares the ideal pulse with the filtered pulse
-def plot_gaus_compare( org, flt, lbl):
-    colors = ["k","b","g","m","c","r"]
-    # --- check if flt is a tuple 
-    if (type(lbl) is tuple):
-        fig, ax = plt.subplots(nrows=len(lbl), ncols=1)
-        for a,f,l in zip( ax, flt, lbl ):
-            for p,c in zip(org,colors):
-                if p!="Time":
-                    a.plot(org["Time"]*1e9, org[p], color=c, label="$\\sigma$="+p)
-                    a.plot(f["Time"]*1e9, f[p], color=c, linestyle="dashdot", label="$\\sigma$="+p+" "+l)
-                a.grid(axis="both",which="both")
-                a.set_xlabel("Time [ns]")
-                a.set_ylabel("Normalized Amplitude")
-                a.set_title('Ideal Beam Pulse vs '+l)
-                a.legend()
-    else:
-        fig, ax = plt.subplots(nrows=1, ncols=1)
-        for p, c in zip(org, colors):
-            if p!="Time":
-                ax.plot(org["Time"]*1e9, org[p], color=c, label='$\\sigma$='+p)
-                ax.plot(flt["Time"]*1e9, flt[p], color=c, linestyle="dashdot", label="$\\sigma$="+p+" "+lbl)
-            ax.grid(axis="both",which="both")
-            ax.set_xlabel("Time [ns]")
-            ax.set_ylabel("Normalized Amplitude")
-            ax.set_title('Ideal Beam Pulse vs '+lbl)
-            ax.legend()
-    plt.tight_layout()
-    plt.show() 
-
-# --- Waterfall plot generator
-def waterfall_plot(
-    waveforms: list[np.ndarray],
-    time_array: np.ndarray,
-    num_waveforms_to_plot: int = 50,
-    amplitude_scaling: int = 5,
-    title: str = "Waterfall Plot of Waveforms",
-    xlim: tuple[float, float] = None,
-    ylim: tuple[float, float] = None,
-    xlabel: str = "Time (Samples)",
-    ylabel: str = "Amplitude + Offset",
-    figsize: tuple[int, int] = (10, 6),
-    **kwargs
-) -> None:
-    """
-    Creates a waterfall plot of a subset of waveforms from a list.
-
-    Args:
-        waveforms: A list of numpy arrays, where each array represents a waveform.
-        time_array: A numpy array representing the time values for the waveforms.
-        num_waveforms_to_plot: The number of evenly spaced waveforms to display.
-        title: The title of the plot.
-        xlim: The x-axis limits (tuple of two floats).
-        ylim: The y-axis limits (tuple of two floats).
-        xlabel: The x-axis label.
-        ylabel: The y-axis label.
-        figsize: The figure size (tuple of two ints).
-
-    Raises:
-        ValueError: If num_waveforms_to_plot exceeds the total number of waveforms.
-
-    Returns:
-        None
-    """
-
-    num_total_waveforms = len(waveforms)
-
-    if num_waveforms_to_plot > num_total_waveforms:
-        raise ValueError("Number of waveforms to plot cannot exceed the total number of waveforms.")
-
-    indices = np.linspace(0, num_total_waveforms - 1, num_waveforms_to_plot, dtype=int)
-    selected_waveforms = [waveforms[i] for i in indices]
-
-    plt.figure(figsize=figsize)
-
-    for i, waveform in enumerate(selected_waveforms):
-        plt.plot(time_array, waveform + i * amplitude_scaling, linewidth=0.75, color='darkblue', **kwargs) # Add offset to each waveform
-
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    if xlim:
-        plt.xlim(xlim)
-    if ylim:
-        plt.ylim(ylim)
-    plt.grid(True, linestyle='--', alpha=0.4)
-    plt.tight_layout()
-    plt.show()
-
-def animate_bunch_splitting(
-    waveforms: list[np.ndarray],
-    time_array: np.ndarray,
-    title: str = "Waterfall Plot of Waveforms",
-    xlim: tuple[float, float] = None,
-    ylim: tuple[float, float] = None,
-    xlabel: str = "Samples",
-    ylabel: str = "Amplitude |a.u.|",
-    save_file: str = None,
-    **kwargs
-) -> None:
-    """
-    Animate a set of waveforms by plotting each waveform in sequence.
-
-    Parameters
-    ----------
-    waveforms : list of numpy arrays
-        The list of waveforms to animate.
-    time_array : numpy array
-        The time array to use for the x-axis of the plot.
-    title : str, optional
-        The title of the plot.
-    xlim : tuple of two floats, optional
-        The x-axis limits.
-    ylim : tuple of two floats, optional
-        The y-axis limits.
-    xlabel : str, optional
-        The x-axis label.
-    ylabel : str, optional
-        The y-axis label.
-    save_file : str, optional
-        The file path to save the animation to. If not provided, the animation is displayed but not saved.
-
-    Returns
-    -------
-    None
-    """
-    fig, ax = plt.subplots()
-    line, = ax.plot(time_array, waveforms[0], **kwargs)
-    if xlim:
-        ax.set_xlim(xlim)
-    if ylim:
-        ax.set_ylim(ylim)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-
-    def update(frame):
-        line.set_ydata(waveforms[frame])
-        return line,
-
-    ani = animation.FuncAnimation(fig, update, frames=len(waveforms), interval=50, blit=True)
-    if save_file:
-        ani.save(save_file, writer="pillow", fps=20)
-
-    plt.show()

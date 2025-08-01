@@ -1,8 +1,9 @@
 import itertools
 import numpy as np
 import pandas as pd
+import os
 import matplotlib.pyplot as plt
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, Tuple, List, Any
 
 # --- Scipy imports
 from scipy.interpolate import interp1d
@@ -205,6 +206,7 @@ def conv_to_rc( cable_len, data, impedance=50.0 ):
 	return rc_vals
 
 # --- Function for generating subcircuit
+#TODO : Generic_subcircuit section need to be updated
 def create_subcircuit( rc_vals, cable, length, impedance=50.0, velocity=0.85 ):
 	
 	d = rc_vals["{length}m".format(length=length)]
@@ -286,35 +288,6 @@ def corcoef(func, tpl, x, y, mode="PZ"):
 	ssres = np.sum((y-y_hat)**2)
 	
 	return 1 - ssres / sstot
-
-def reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl=XLABEL, ylbl=YLABEL, ):
-	fig = Figure()
-	ax = fig.add_subplot(111)
-	
-	xa, ya = check_length(x, y)
-	if (xa[-1] >= 1e9 ):
-		xa *= 1e-6
-	# --- Plotting
-	xx1 = np.linspace(xa.min(), xa.max(), len(xa)*20)
-	ax.plot(xa,ya,'bo')
-
-	for key in func:
-		ax.plot(xx1, func[key](func_vals[key], xx1), '--')
-
-	# --- --- Set up the legend label
-	leg = ['data']
-	for key, val in rsq.items():
-		leg.append( key+', $R^2$ = {:.4f}'.format(val)  )        
-		ax.legend( leg )
-
-	# --- --- Set up the axis'
-	ax.set_xlabel(xlbl)
-	ax.set_ylabel(ylbl)
-	ax.grid('on')
-	fig.suptitle('{} Attenuation Over Frequency w/ Fit'.format(cable_name))
-	# fig.tight_layout()
-	
-	return fig
 
 # ------------------- Import Function ------------------- #
 
@@ -516,6 +489,23 @@ def measure_3db_bandwidth( ntwk ):
 	f_high = freq[indices[-1]]
 	return f_high - f_low, f_low, f_high, max_db
 
+# --- Export to SPICE PWL
+def export_to_spice_pwl(time_array: np.ndarray, value_array: np.ndarray, filename: str) -> None:
+    """
+    Exports time and value arrays into a text file formatted for SPICE PWL.
+
+    Args:
+        time_array (np.ndarray): Array representing time values.
+        value_array (np.ndarray): Array representing source values.
+        filename (str): Name of the output file.
+    """
+    if len(time_array) != len(value_array):
+        raise ValueError("Time array and value array must have the same length.")
+
+    with open(filename, 'w') as file:
+        for t, v in zip(time_array, value_array):
+            file.write(f"{t}\t{v}\n")
+
 # ---------------------- SPICE-Lib Scripts ---------------- #
 
 # --- Prepare for SPICE Simulation
@@ -579,8 +569,6 @@ def generate_waveforms(
     Returns:
         Dict[str, str]: Dictionary mapping waveform names to saved file paths.
     """
-    from spicelib.helpers import export_to_spice_pwl  # Local import for compatibility
-
     wave_paths = {}
     spice_time = time_ary - time_ary[0]
 
@@ -591,7 +579,67 @@ def generate_waveforms(
 
     return wave_paths
 
-# --- Run Simulations
+# --- Run a Single SPICE Simulation
+def run_single_spice_simulation(
+	runner: SimRunner,
+    editor: AscEditor,
+    analysis_command: str,
+    parameters: Dict[str, Any] = {},
+    component_param: Dict[str, Any] = {},
+    output_folder: Union[str, Path] = None,
+    alt_solver: bool = False,
+    log_console: bool = True
+) -> Tuple[RawRead, LTSpiceLogReader, str, str]:
+    """
+    Run a single LTSpice simulation with specified parameters and analysis.
+
+    Args:
+        runner (SimRunner): LTSpice simulation runner.
+		editor (AscEditor): LTSpice schematic editor.
+        analysis_command (str): Simulation command (e.g., '.TRAN 1n 100n', '.AC oct 10 1Hz 1GHz').
+        parameters (dict): Dictionary of parameters to set in the schematic.
+		component_param (dict): Dictionary of component parameters to set in the schematic.
+        output_folder (str or Path): Output folder to store results.
+        alt_solver (bool): Use the alternate solver (-alt).
+        log_console (bool): Save LTSpice console output to a log file.
+
+    Returns:
+        Tuple[RawRead, LTSpiceLogReader, str, str]:
+            - Parsed raw data object,
+            - Parsed log file object,
+            - Path to the raw file,
+            - Path to the log file.
+    """
+    # Create output folder if not given
+    if output_folder is None:
+        output_folder = Path(asc_path).parent / "sim_output"
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Load and configure circuit
+    editor.remove_Xinstruction(r"\.(TRAN|AC|DC).*")  # Remove existing simulation directives
+    editor.add_instructions(analysis_command)        # Add the specified analysis line
+
+    # Set parameters
+    for key, val in parameters.items():
+        editor.set_parameter(key, val)
+
+	# Set component parameters
+    for key, val in component_param.items():
+        editor[key]['Value'] = str(val)
+
+    # Run simulation
+    options = ['-alt'] if alt_solver else ['-norm']
+    runner.run(editor, switches=options, exe_log=log_console)
+
+    # Retrieve results
+    for raw_path, log_path in runner:
+        raw_data = RawRead(raw_path)
+        log_data = LTSpiceLogReader(log_path)
+        return raw_data, log_data, raw_path, log_path
+
+
+# --- Run Multiple Parallel Simulations
 def run_batch_simulations(
     runner: SimRunner,
     editor: AscEditor,
@@ -611,7 +659,7 @@ def run_batch_simulations(
         Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]: 
             Dictionary keyed by waveform name with values being tuples of (time, V(wcm_in), V(wcm_out)).
     """
-    results = {}
+    temp = {}
 
     # Ensure consistent transient setup
     editor.remove_Xinstruction(r"\.TRAN.*")
@@ -619,22 +667,60 @@ def run_batch_simulations(
 
     for key, waveform_path in waveforms.items():
         print(f"Simulating response to: {key}")
-        editor['I1']['Value'] = f"PWL SCOPEDATA={waveform_path}"
+        editor['I1']['Value'] = f"PWL SCOPEDATA='{waveform_path}'"
         opts = ['-alt'] if use_alt_solver else ['-norm']
+		
         runner.run(editor, switches=opts, exe_log=True)
-
+            
     # Read results
+    # idx = len(key)
     for raw, log in runner:
         print(f"Raw file: {raw}, Log file: {log}")
         raw_data = RawRead(raw)
         x = raw_data.get_wave('time')
         y1 = raw_data.get_wave('V(wcm_in)')
         y2 = raw_data.get_wave('V(wcm_out)')
-        waveform_id = str(raw)[-1]  # adjust this if needed for unique names
-        results[waveform_id] = (x, y1, y2)
+        waveform_id = str(raw)[-5]  # adjust this if needed for unique names
+        temp[waveform_id] = (x, y1, y2)
 
         # Optional: parse log data
         log_data = LTSpiceLogReader(log)
 
     print(f"Successful/Total Simulations: {runner.okSim}/{runner.runno}")
-    return results
+    results = { key : v for key, v in zip(waveforms.keys(), temp.values()) }
+    return results, log_data
+
+def extract_spice_log_measurements(
+    log_files: Dict[str, str],
+    keys_to_extract: list[str] = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Extract measurements from a batch of SPICE log files.
+
+    Args:
+        log_files (Dict[str, str]): Dictionary mapping run labels to log file paths.
+        keys_to_extract (list[str], optional): List of measurement keys to extract. 
+            If None, all available keys are extracted.
+
+    Returns:
+        Dict[str, Dict[str, Any]]: Dictionary of extracted measurements.
+            Outer keys are run labels, inner dicts map measurement names to values.
+    """
+    measurements = {}
+    
+    for run_name, log_path in log_files.items():
+        log_data = LTSpiceLogReader(log_path)
+        run_results = {}
+        
+        if keys_to_extract is None:
+            # Extract all available measurements
+            for key in log_data.keys():
+                run_results[key] = log_data[key]
+        else:
+            # Extract only specified keys
+            for key in keys_to_extract:
+                run_results[key] = log_data.get(key, None)
+
+        measurements[run_name] = run_results
+
+    return measurements

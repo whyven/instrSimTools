@@ -158,3 +158,12 @@ def fir_filter_check(filtkern: np.ndarray, fs: float, fcut: float | list[float])
     plt.tight_layout()
     plt.show()
     return 0
+
+# ---------------- Bandlimit filter
+# --- From Scipy Cookbook ... https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html
+def butter_lowpass(lowcut, fs, order=5):
+    nyq=0.5*fs
+    low = lowcut/nyq
+    b, a = sg.butter( order , low, btype='lowpass')
+    return b, a
+
