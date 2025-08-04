@@ -644,6 +644,7 @@ def run_batch_simulations(
     runner: SimRunner,
     editor: AscEditor,
     waveforms: Dict[str, str],
+    monitors: List[str],
     use_alt_solver: bool = True
 ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
@@ -653,6 +654,7 @@ def run_batch_simulations(
         runner (SimRunner): SimRunner object for executing simulations.
         editor (AscEditor): AscEditor object used to modify and control the simulation.
         waveforms (Dict[str, str]): Dictionary mapping waveform names to PWL file paths.
+        monitors (List[str]): List of monitor names to collect data from.
         use_alt_solver (bool, optional): Whether to use the alternate SPICE solver (-alt). Defaults to True.
 
     Returns:
@@ -660,6 +662,7 @@ def run_batch_simulations(
             Dictionary keyed by waveform name with values being tuples of (time, V(wcm_in), V(wcm_out)).
     """
     temp = {}
+    temp_log = {}
 
     # Ensure consistent transient setup
     editor.remove_Xinstruction(r"\.TRAN.*")
@@ -678,16 +681,18 @@ def run_batch_simulations(
         print(f"Raw file: {raw}, Log file: {log}")
         raw_data = RawRead(raw)
         x = raw_data.get_wave('time')
-        y1 = raw_data.get_wave('V(wcm_in)')
-        y2 = raw_data.get_wave('V(wcm_out)')
+        mons = {}
+        for mon in monitors:
+            mons[mon] = raw_data.get_wave(mon)
         waveform_id = str(raw)[-5]  # adjust this if needed for unique names
-        temp[waveform_id] = (x, y1, y2)
+        temp[waveform_id] = (x, mons)
 
         # Optional: parse log data
-        log_data = LTSpiceLogReader(log)
+        temp_log[waveform_id] = LTSpiceLogReader(log)
 
     print(f"Successful/Total Simulations: {runner.okSim}/{runner.runno}")
     results = { key : v for key, v in zip(waveforms.keys(), temp.values()) }
+    log_data = { key : v for key, v in zip(waveforms.keys(), temp_log.values()) }
     return results, log_data
 
 def extract_spice_log_measurements(

@@ -266,7 +266,7 @@ def animate_bunch_splitting(
 # ------------------- Plotting functions from circuit ------------------- #
 
 # --- Regression Fit Plots
-def reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl=XLABEL, ylbl=YLABEL, ):
+def cableAtten_reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl="Frequency (MHz)", ylbl="Attenuation (dB)", ):
 	fig = Figure()
 	ax = fig.add_subplot(111)
 	
@@ -296,6 +296,7 @@ def reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl=XLABEL, ylbl=YLABEL, 
 	return fig
 
 # --- Plot Batch Simulation Results
+#FIXME Need to adjust for bach simulation update
 def plot_spice_batch_results(
     batch_data: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
     xlim_ns: Tuple[float, float] = (38, 48),
@@ -382,8 +383,8 @@ def compare_plot_single(
     ideal_wfm: Union[List[float], pd.Series],
     wfms: Dict[str, pd.DataFrame],
     time_unit: str = "ns",
-    ylim: List[float, float] = None,
-    xlim: List[float, float] = None,
+    ylim: List[float] = None,
+    xlim: List[float] = None,
     title: str = "Comparison Plot: Ideal vs. Filtered Waveform",
     xlabel: str = None,
     ylabel: str = "Amplitude (a.u.)",
@@ -422,8 +423,8 @@ def compare_plot_multiple(
     n_cols: int ,
     n_rows: int,  # "row" or "col"
     time_unit: str = "ns",
-    ylim: List[float, float] = None,
-    xlim: List[float, float] = None,
+    ylim: List[float] = None,
+    xlim: List[float] = None,
     titles: List[str] = None,
     sup_title: str = "Comparison Plot: Ideal vs. Filtered Waveform",
     xlabel: str = None,

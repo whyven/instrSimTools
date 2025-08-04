@@ -52,7 +52,8 @@ def gaussian_pulse(
     rf: float = None,
     BW: float = 1,
     phase_shift: float = 0.0,
-    phase_freq: float = None
+    phase_freq: float = None,
+    bunch_charge: float = None,
 ) -> np.ndarray:
     """
     Generate a Gaussian pulse with optional phase shift based on frequency.
@@ -76,13 +77,18 @@ def gaussian_pulse(
         # Calculate the standard deviation from the FWHM if given
         s = sigma if FWHM is None else FWHM / (2 * np.sqrt(2 * np.log(2)))
         gaus_pulse = (1 / (s * np.sqrt(2 * np.pi))) * np.exp(-0.5 * (t / s)**2)
-        return gaus_pulse / np.max(gaus_pulse), s
+        
     else:
         # Create gaussian envelope from rf and the bandwidth if given
         ref = np.power(10.0, -6 / 20.0)
         a = -(np.pi * rf * BW) ** 2 / (4.0 * np.log(ref))
-        yenv = np.exp(-a * t**2)
-        return yenv / np.max(yenv), calculate_pulse_width(yenv,t[1]-t[0])
+        gaus_pulse = np.exp(-a * t**2)
+        s = calculate_pulse_width(yenv,t[1]-t[0])
+    
+    # --- Normalize signal then scale it to the desired charge
+    gaus_pulse /= np.max(gaus_pulse)
+    scale = bunch_charge / np.trapz(gaus_pulse,t) if bunch_charge else 1.0
+    return gaus_pulse*scale, s
 
 # --- Create a Skew-Gaussian Pulse
 def skew_gaus_pulse(
@@ -93,7 +99,8 @@ def skew_gaus_pulse(
     rf: float = None,
     BW: float = 1,
     phase_shift: float = 0.0,
-    phase_freq: float = None
+    phase_freq: float = None,
+    bunch_charge: float = None,
 ) -> np.ndarray:
     """
     Generate a skewed Gaussian pulse with optional phase shift based on frequency.
@@ -119,8 +126,11 @@ def skew_gaus_pulse(
     skew_factor = 1 - erf(-1 * (skew * t / (np.sqrt(2) * s)))
     # Apply the skew factor to the Gaussian pulse
     skewed_pulse = gaus * skew_factor
-    # Normalize the skewed pulse to have a maximum amplitude of 1
-    return skewed_pulse / np.max(skewed_pulse)
+    
+    # --- Normalize signal then scale it to the desired charge
+    skewed_pulse /= np.max(skewed_pulse)
+    scale = bunch_charge / np.trapz(skewed_pulse,t) if bunch_charge else 1.0
+    return skewed_pulse*scale
 
 # --- Create Gaussian Doublet
 def gaus_doublet_pulse( 
@@ -131,6 +141,7 @@ def gaus_doublet_pulse(
         BW: float = 1, 
         phase_shift: float = 0.0, 
         phase_freq: float = None,
+        bunch_charge: float = None,
 ) -> np.ndarray:
     """Generate a Gaussian doublet pulse.
     
@@ -150,7 +161,11 @@ def gaus_doublet_pulse(
     t_shift = (phase_shift / 360.0) / phase_freq if phase_freq else 0.0
     t = t - t_shift
     sig = (-1*t/s**2)*gaus
-    return sig / np.max( sig )
+
+    # --- Normalize signal then scale it to the desired charge
+    sig /= np.max(sig)
+    scale = bunch_charge / np.trapz(sig,t) if bunch_charge else 1.0
+    return sig*scale
 
 # --- Create a Morlet Wavelet
 def morlet_pulse(
@@ -162,6 +177,7 @@ def morlet_pulse(
         BW: float = 1, 
         phase_shift: float = 0.0, 
         phase_freq: float = None,
+        bunch_charge: float = None,
 ) -> np.ndarray:
     """Generate a Morlet wavelet.
     
@@ -180,7 +196,11 @@ def morlet_pulse(
     """
     gaus, s = gaussian_pulse(t, sigma, FWHM, rf, BW, phase_shift, phase_freq)
     sig = np.cos(2 * np.pi * f * t) * gaus
-    return sig / np.max( abs( sig ) )
+
+    # --- Normalize signal then scale it to the desired charge
+    sig /= np.max(sig)
+    scale = bunch_charge / np.trapz(sig,t) if bunch_charge else 1.0
+    return sig*scale
 
 # --- Create a Damped Sine Wave
 def damped_sine_wave(
@@ -189,7 +209,7 @@ def damped_sine_wave(
         freq: float = 1.0, 
         decay: float = 1.0, 
         amp: float = 1.0, 
-        phi: float = 0.0
+        phi: float = 0.0,
 ) -> np.ndarray:
     """Generate a damped sine wave.
     
@@ -217,7 +237,8 @@ def cosine_square_pulse(
     amplitude: float = 1.0,
     phase_freq: float = None,
     phase_shift: float = 0.0,
-    degrees: bool = False
+    degrees: bool = False,
+    bunch_charge: float = None,
 ) -> np.ndarray:
     """
     Generate a cosine-squared pulse with optional frequency-based phase shift.
@@ -226,10 +247,11 @@ def cosine_square_pulse(
         t (np.ndarray): Time array.
         pulse_width (float): Pulse width in seconds.
         pw_type (str, optional): Pulse width type. 'fixed', 'fwhm', or 'rms'. Defaults to 'fixed'.
-        amplitude (float, optional): Amplitude of the pulse. Defaults to 1.0.
+        amplitude (float, optional): Amplitude of the cosine-squared pulse. Defaults to 1.0.
         phase_freq (float, optional): Frequency in Hz for phase shift calculation. If None, uses internal cosine width.
         phase_shift (float, optional): Phase shift (in degrees if degrees=True, else in radians).
         degrees (bool, optional): Whether phase_shift is in degrees. Defaults to False.
+        bunch_charge (float, optional): Charge of the bunch.
 
     Returns:
         np.ndarray: Cosine-squared pulse.
@@ -263,10 +285,19 @@ def cosine_square_pulse(
     mask = np.abs(t - t_shift) <= (0.5 * period)
     waveform[~mask] = 0.0
 
-    return amplitude * waveform
+    # Apply amplitude or bunch charge scaling 
+    waveform *= bunch_charge / np.trapz(waveform,t) if bunch_charge else amplitude
+
+    return waveform
 
 # --- Uniform Pulse
-def uniform_pulse(t: np.ndarray, pulse_width: float, pulse_BW: int = 10, amplitude: float = 1.0) -> np.ndarray:
+def uniform_pulse(
+        t: np.ndarray, 
+        pulse_width: float, 
+        pulse_BW: int = 10, 
+        amplitude: float = 1.0,
+        bunch_charge: float = None,
+) -> np.ndarray:
     """Generate a uniform pulse from summed sines. This provides a more realistic pulse shape for uniform beams compared to the square pulse.
     
     Args:
@@ -274,6 +305,7 @@ def uniform_pulse(t: np.ndarray, pulse_width: float, pulse_BW: int = 10, amplitu
         pulse_width (float): Width of the pulse in seconds.
         pulse_BW (int, optional): Pulse bandwidth. Use this to determine how flat and sharp the sides. Defaults to 10.
         amplitude (float, optional): Amplitude of the pulse. Defaults to 1.0.
+        bunch_charge (float, optional): Charge of the bunch.
     
     Returns:
         np.ndarray: Uniform pulse.
@@ -289,8 +321,8 @@ def uniform_pulse(t: np.ndarray, pulse_width: float, pulse_BW: int = 10, amplitu
     
     # --- Normalize the pulse to its maximum value
     test_sig /= np.max(test_sig)
-    
-    return test_sig * amplitude
+    scale = bunch_charge / np.trapz(test_sig,t) if bunch_charge else amplitude
+    return test_sig*scale
 
 # --- Create a Square Pulse
 def square_pulse(t: np.ndarray, period: float, amplitude: float = 1.0) -> np.ndarray:
@@ -440,7 +472,17 @@ def create_transition_array(
 # -------------------------------- Signal Modulations ------------------------------------- #
 
 # --- Modulating Gaussian Pulses
-def mod_gaus_pulse(t: np.ndarray, gF: float, gBW: float, modF: list[float], gFAmp: float = 1.0, fAmp: float = 1.0, gRef: float = -6) -> np.ndarray:
+def mod_gaus_pulse(
+    t: np.ndarray, 
+    gF: float, 
+    gBW: float, 
+    modF: list[float], 
+    gFAmp: float = 1.0, 
+    fAmp: float = 1.0, 
+    gRef: float = -6,
+    amplitude: float = 1.0,
+    bunch_charge: float = None,
+) -> np.ndarray:
     """Modulate a Gaussian pulse with multiple frequencies.
     
     Args:
@@ -462,10 +504,25 @@ def mod_gaus_pulse(t: np.ndarray, gF: float, gBW: float, modF: list[float], gFAm
     for f, amp in zip(modF, fAmp if isinstance(fAmp, list) else [fAmp] * len(modF)):
         mod *= amp * np.sin(2 * np.pi * f * t)
     mod += np.sqrt(gFAmp**2 + np.dot(fAmp, fAmp) if isinstance(fAmp, list) else fAmp**2)
-    return yenv * mod / np.max(np.abs(yenv * mod))
+    
+    # --- Normalize and scale the signal
+    sig = yenv * mod / np.max(np.abs(yenv * mod))
+    sig *= bunch_charge/np.trapz(sig, t) if bunch_charge else amplitude
+    return sig
 
 # --- Modulating Cosine Square Pulses
-def mod_cos_sq_pulse(t: np.ndarray, pulse_width: float, baseF: float, modF: float, pw_type: str = 'fixed', pulsAmp: float = 1.0, modAmp: float = 1.0, phi: float = 0.0) -> np.ndarray:
+def mod_cos_sq_pulse(
+    t: np.ndarray, 
+    pulse_width: float, 
+    baseF: float, 
+    modF: float, 
+    pw_type: str = 'fixed', 
+    pulsAmp: float = 1.0, 
+    modAmp: float = 1.0, 
+    phi: float = 0.0,
+    amplitude: float = 1.0,
+    bunch_charge: float = None,
+) -> np.ndarray:
     """Modulate a cosine square pulse with multiple frequencies.
     
     Args:
@@ -489,6 +546,9 @@ def mod_cos_sq_pulse(t: np.ndarray, pulse_width: float, baseF: float, modF: floa
     mod_csp = (csp_sin*mod_sin+np.sqrt(modAmp**2+pulsAmp**2))
     mod_csp *= csp
     mod_csp /= mod_csp.max()
+
+    # --- Scale the signal
+    mod_csp *= bunch_charge/np.trapz(mod_csp, t) if bunch_charge else amplitude
 
     return mod_csp
 
