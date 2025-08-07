@@ -1,6 +1,7 @@
 import itertools
 import numpy as np
 import pandas as pd
+from collections import OrderedDict
 import os
 import matplotlib.pyplot as plt
 from typing import Union, Dict, Tuple, List, Any
@@ -645,8 +646,9 @@ def run_batch_simulations(
     editor: AscEditor,
     waveforms: Dict[str, str],
     monitors: List[str],
-    use_alt_solver: bool = True
-) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    use_alt_solver: bool = True,
+    trans_instructions: str = "1p 100n 0 10p",
+) -> Tuple[Dict[str, Tuple[np.ndarray, Dict[str, np.ndarray]]], Dict[str, LTSpiceLogReader]]:
     """
     Run batch LTSpice simulations with each input waveform and collect results.
 
@@ -656,44 +658,45 @@ def run_batch_simulations(
         waveforms (Dict[str, str]): Dictionary mapping waveform names to PWL file paths.
         monitors (List[str]): List of monitor names to collect data from.
         use_alt_solver (bool, optional): Whether to use the alternate SPICE solver (-alt). Defaults to True.
+        trans_instructions (str, optional): SPICE .TRAN command arguments. Defaults to "1p 100n 0 10p".
 
     Returns:
-        Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]: 
-            Dictionary keyed by waveform name with values being tuples of (time, V(wcm_in), V(wcm_out)).
+        Tuple:
+            - Dict mapping waveform name to (time array, {monitor: waveform}).
+            - Dict mapping waveform name to LTSpiceLogReader instance.
     """
-    temp = {}
-    temp_log = {}
+    results = OrderedDict()
+    logs = OrderedDict()
+    simulation_order = []
 
     # Ensure consistent transient setup
     editor.remove_Xinstruction(r"\.TRAN.*")
-    editor.add_instructions(".TRAN 1p 100n 0 10p")
+    editor.add_instructions(f".TRAN {trans_instructions}")
 
+    # --- Run Simulations
     for key, waveform_path in waveforms.items():
         print(f"Simulating response to: {key}")
         editor['I1']['Value'] = f"PWL SCOPEDATA='{waveform_path}'"
         opts = ['-alt'] if use_alt_solver else ['-norm']
-		
         runner.run(editor, switches=opts, exe_log=True)
-            
-    # Read results
-    # idx = len(key)
-    for raw, log in runner:
-        print(f"Raw file: {raw}, Log file: {log}")
-        raw_data = RawRead(raw)
-        x = raw_data.get_wave('time')
-        mons = {}
-        for mon in monitors:
-            mons[mon] = raw_data.get_wave(mon)
-        waveform_id = str(raw)[-5]  # adjust this if needed for unique names
-        temp[waveform_id] = (x, mons)
+        simulation_order.append(key)
+    
+    # --- Align simulation run with waveform
+    sim_order = {str(i) : key for i, key in enumerate(simulation_order,start=1) }
 
-        # Optional: parse log data
-        temp_log[waveform_id] = LTSpiceLogReader(log)
+    # --- Process results in order
+    for raw, log in runner:
+        raw_data = RawRead(raw)
+        time = raw_data.get_wave('time')
+        signal_data = { mon : raw_data.get_wave(mon) for mon in monitors } 
+        waveform_id = str(raw).split('.')[0][-1]
+        key = sim_order[waveform_id]
+        print(f"Reading results for {key} -> Raw: {raw}, Log: {log}")
+        results[key] = (time, signal_data)
+        logs[key] = LTSpiceLogReader(log)
 
     print(f"Successful/Total Simulations: {runner.okSim}/{runner.runno}")
-    results = { key : v for key, v in zip(waveforms.keys(), temp.values()) }
-    log_data = { key : v for key, v in zip(waveforms.keys(), temp_log.values()) }
-    return results, log_data
+    return results, logs
 
 def extract_spice_log_measurements(
     log_files: Dict[str, str],

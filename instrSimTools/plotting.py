@@ -296,12 +296,17 @@ def cableAtten_reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl="Frequency
 	return fig
 
 # --- Plot Batch Simulation Results
-#FIXME Need to adjust for bach simulation update
 def plot_spice_batch_results(
-    batch_data: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
-    xlim_ns: Tuple[float, float] = (38, 48),
+    batch_data: Dict[str, Tuple[str, Dict[str,np.ndarray]]],
+    signals: List[str],
+    monitors: List[str],
     time_units: str = 'ns',
     title: str = "SPICE Batch Simulation Results",
+    xlim: List[float] = None,
+    xlabel: str = "Time [{}]",
+    ylim: List[float] = None,
+    ylabel: Union[str, List[str]] = "Voltage (V)",
+    dual_y: List[str] = None,
     figsize: Tuple[int, int] = (10, 5)
 ) -> None:
     """
@@ -311,7 +316,6 @@ def plot_spice_batch_results(
         batch_data (Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]): 
             Dictionary of batch results with keys as run names and values as tuples:
             (time_array, input_waveform, output_waveform).
-        xlim_ns (Tuple[float, float], optional): Time axis limits in nanoseconds. Defaults to (38, 48).
         time_units (str, optional): Units for time axis label. Defaults to 'ns'.
         title (str, optional): Plot title. Defaults to "SPICE Batch Simulation Results".
         figsize (Tuple[int, int], optional): Size of the plot figure. Defaults to (10, 5).
@@ -320,20 +324,47 @@ def plot_spice_batch_results(
         None
     """
     time_factor = {"ns": 1e9, "us": 1e6, "ms": 1e3, "s": 1}
-    plt.figure(figsize=figsize)
-
-    for run_name, (time, vin, vout) in batch_data.items():
-        plt.plot(time * time_factor[time_units], vin, linestyle='--', alpha=0.7, label=f'{run_name} Vin')
-        plt.plot(time * time_factor[time_units], vout, linestyle='-', alpha=0.8, label=f'{run_name} Vout')
-
-    plt.xlim(xlim_ns)
-    plt.xlabel(f"Time ({time_units})")
-    plt.ylabel("Voltage (V)")
-    plt.title(title)
-    plt.legend(loc='best', fontsize=8)
-    plt.grid(True, which='both', ls='--', lw=0.5, color='gray')
+    fig, ax = plt.subplots(ncols=1, nrows=1, figsize=figsize)
+    
+    # --- Setup plot for dual y axis
+    if dual_y:
+        color = ['coral','salmon','tomato','orangered','red','crimson','brown']
+        ax1 = ax.twinx()
+        if isinstance(ylabel, list):
+            ax.set_ylabel(ylabel[0])
+            ax1.set_ylabel(ylabel[1], color=color[0])
+            ax1.tick_params(axis='y', labelcolor=color[0])
+    
+    for i, (run_name, mons) in enumerate(batch_data.items()):
+        if run_name in signals:
+            time, mon_dict = mons
+            for key, val in mon_dict.items():
+                if key in monitors:
+                    if dual_y and key in dual_y:
+                        ax1.plot( time * time_factor[time_units], val, 
+                                 label=f'{run_name} {key}', linestyle='--', 
+                                 alpha=0.7, color=color[i%len(color)] )
+                    else:
+                        ax.plot(time * time_factor[time_units], val, 
+                                label=f'{run_name} {key}', linestyle='-', alpha=0.8, )
+    
+    # --- Formatting plot
+    h1, l1 = ax.get_legend_handles_labels()
+    if xlim:
+        ax.set_xlim(xlim)
+    if ylim:
+        ax.set_ylim(ylim)
+    if dual_y:
+        ax1.set_ylim(ax.get_ylim())
+        h2, l2 = ax1.get_legend_handles_labels()
+    ax.set_xlabel(xlabel.format(time_units))
+    ax.set_title(title)
+    ax.legend(handles=(h1+h2), labels=(l1+l2), loc='best', fontsize=8)
+    ax.grid(True, which='both', ls='--', lw=0.5, color='gray')
     plt.tight_layout()
-    plt.show()
+    plt.show(fig)
+
+    return fig
 
 # --- Plot Single Simulation Results
 def plot_spice_results(
