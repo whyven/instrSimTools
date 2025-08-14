@@ -1,0 +1,37 @@
+* {cable}_{length}.lib
+* Date: {date}
+* Desc.: SPICE subcircuit Model for {cable} at {length} 
+*
+*
+.subckt {cable}_{length} IN R1 OUT R2
+E1 PZ1 R1 PZ1_C1 R1 1
+R1 PZ1_C1 IN {R1:0.4f}
+C1 PZ1_C1 PZ1_RI1 {C1:0.4e}
+Ri_1 PZ1_RI1 R1 {Z}
+E2 PZ2 R1 PZ2_C2 R1 1
+R2 PZ2_C2 PZ1 {R2:0.4f}
+C2 PZ2_C2 PZ2_RI {C2:0.4e}
+Ri_2 PZ2_RI R1 {Z}
+E3 PZ3 R1 PZ3_C3 R1 1
+R3 PZ3_C3 PZ2 {R3:0.4f}
+C3 PZ3_C3 PZ3_RI {C3:0.4e}
+Ri_3 PZ3_RI R1 {Z}
+E4 PZ4 R1 PZ4_C4 R1 1
+R4 PZ4_C4 PZ3 {R4:0.4f}
+C4 PZ4_C4 PZ4_RI {C4:0.4e}
+Ri_4 PZ4_RI R1 {Z}
+E5 PZ5 R1 PZ5_C5 R1 1
+R5 PZ5_C5 PZ4 {R5:0.4f}
+C5 PZ5_C5 PZ5_RI {C5:0.4e}
+Ri_5 PZ5_RI R1 {Z}
+E6 tl_out R1 PZ6_C1 R1 1
+Ri_6 PZ6_C1 PZ5 {Z}
+C6 PZ6_C1 R1 {C6:0.4e}
+*
+* Additional lossless Transmission line to add delay
+*
+T1 tl_out R1 OUT R2 Td={delay} Z0={Z}
+.ends
+* 
+*
+*  Subcircuit END

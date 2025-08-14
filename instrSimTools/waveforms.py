@@ -5,7 +5,7 @@ from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, Tuple, List, Any, Optional
 
 
 # -------------------------------- Machine Constants  ---------------------------------- #

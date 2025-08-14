@@ -4,7 +4,7 @@ import pandas as pd
 from collections import OrderedDict
 import os
 import matplotlib.pyplot as plt
-from typing import Union, Dict, Tuple, List, Any
+from typing import Union, Dict, Tuple, List, Any, Optional
 
 # --- Scipy imports
 from scipy.interpolate import interp1d
@@ -208,22 +208,27 @@ def conv_to_rc( cable_len, data, impedance=50.0 ):
 
 # --- Function for generating subcircuit
 #TODO : Generic_subcircuit section need to be updated
-def create_subcircuit( rc_vals, cable, length, impedance=50.0, velocity=0.85 ):
-	
-	d = rc_vals["{length}m".format(length=length)]
-	d["cable"] = str(cable)
-	d["length"] = int(float(length))
-	delay = calc_delay(cable, length, velocity)
-	d["delay"] = "{:0.3f}n".format(delay)
-	d["Z"] = impedance
-	d["date"] = str(date.today())
-	
-	# --- Open up the generic subcircuit file 
-	with open( "./static/Generic_subcircuit.lib","r") as f:
-		fl = f.read()
-	nfl = fl.format(**d)
-	
-	return nfl
+def create_subcircuit(rc_vals, cable, length, impedance=50.0, velocity=0.85, filename="subcircuit.lib"):
+    from datetime import date
+
+    d = rc_vals["{length}m".format(length=length)]
+    d["cable"] = str(cable)
+    d["length"] = int(float(length))
+    delay = calc_delay(cable, length, velocity)
+    d["delay"] = "{:0.3f}n".format(delay)
+    d["Z"] = impedance
+    d["date"] = str(date.today())
+
+    # --- Open up the generic subcircuit file 
+    with open("./static/Generic_subcircuit.lib", "r") as f:
+        fl = f.read()
+    nfl = fl.format(**d)
+
+    # --- Write to file
+    with open(filename, "w") as f:
+        f.write(nfl)
+
+    return nfl
 
 # ------------------- Statistics ------------------- #
 

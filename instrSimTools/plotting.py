@@ -6,7 +6,7 @@ from scipy.fftpack import fft, fftshift, fftfreq
 from scipy.special import erf
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, Tuple, List, Optional, Any
 
 # --- Constants
 # Utility for time unit scaling
@@ -267,8 +267,8 @@ def animate_bunch_splitting(
 
 # --- Regression Fit Plots
 def cableAtten_reg_plot( x, y, func, func_vals, rsq, cable_name, xlbl="Frequency (MHz)", ylbl="Attenuation (dB)", ):
-	fig = Figure()
-	ax = fig.add_subplot(111)
+	fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 5), dpi=100) # fig = plt.Figure()
+	# ax = fig.add_subplot(111)
 	
 	xa, ya = check_length(x, y)
 	if (xa[-1] >= 1e9 ):
@@ -494,6 +494,109 @@ def compare_plot_multiple(
 
     plt.suptitle(sup_title)
     plt.tight_layout()
-    plt.show()
+    plt.show(fig)
 
     return fig
+
+# --- Dual y-axis comparison plots - Row seperated
+def dual_axis_comparison_plot(
+    time: Union[np.ndarray, List[np.ndarray], Tuple[np.ndarray, ...]],
+    y1_data: Union[List[np.ndarray], Tuple[np.ndarray, ...]],
+    y2_data: Union[List[np.ndarray], Tuple[np.ndarray, ...]],
+    timescale_factor: float = 1.0,
+    xlim: Optional[Tuple[float, float]] = None,
+    xlabel: str = "Time",
+    ylim: Optional[Tuple[float, float]] = None,
+    ylabel: str = "Primary Y-Axis",
+    y2label: str = "Secondary Y-Axis",
+    plot_titles: Optional[List[str]] = None,
+    sup_title: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 6)
+):
+    """
+    Create side-by-side comparison plots with dual y-axes.
+    Supports shared or per-subplot time arrays.
+
+    Args:
+        time: Either a single np.ndarray for all subplots, or a list/tuple of np.ndarrays (one per subplot).
+        y1_data: List or tuple of np.ndarrays for primary axis data.
+        y2_data: List or tuple of np.ndarrays for secondary axis data.
+        timescale_factor: Scale applied to time axis (e.g., 1e9 for ns).
+        xlim: Optional x-axis limits (min, max) after scaling.
+        xlabel: Label for x-axis.
+        ylim: Optional y-axis limits for primary axis.
+        ylabel: Label for primary y-axis.
+        y2label: Label for secondary y-axis.
+        plot_titles: Optional list of subplot titles (length matches y1_data).
+        sup_title: Optional super title for the figure.
+        figsize: Figure size.
+    """
+    num_plots = len(y1_data)
+    if len(y2_data) != num_plots:
+        raise ValueError("y1_data and y2_data must have the same length.")
+
+    # Convert time to per-subplot list if it's a single array
+    if isinstance(time, (np.ndarray, list, tuple)):
+        if isinstance(time, np.ndarray):
+            time_list = [time] * num_plots
+        else:
+            if len(time) != num_plots:
+                raise ValueError("Length of time list/tuple must match number of plots.")
+            time_list = list(time)
+    else:
+        raise TypeError("time must be a numpy array or a list/tuple of numpy arrays.")
+
+    fig, axes = plt.subplots(nrows=1, ncols=num_plots, sharey=True, figsize=figsize)
+    if num_plots == 1:
+        axes = [axes]  # make iterable
+
+    twin_axes = [ax.twinx() for ax in axes]
+
+    for idx, (ax, ax2, t_arr, y1, y2) in enumerate(zip(axes, twin_axes, time_list, y1_data, y2_data)):
+        ax.plot(t_arr * timescale_factor, y1, label=ylabel)
+        ax2.plot(t_arr * timescale_factor, y2, ":", color="green", label=y2label)
+
+        if ylim:
+            ax.set_ylim(ylim)
+            ax2.set_ylim(ylim)
+        else:
+            ax2.set_ylim(ax.get_ylim())
+
+        ax.grid(True, which="both", axis="both")
+        ax2.grid(True, which="both", axis="both", linestyle=":", alpha=0.8)
+        ax2.tick_params(axis='y', labelcolor="green")
+        ax.set_xlabel(xlabel)
+
+        if xlim:
+            ax.set_xlim(xlim)
+
+        if plot_titles and idx < len(plot_titles):
+            ax.set_title(plot_titles[idx])
+
+        if idx == 0:
+            ax.set_ylabel(ylabel)
+        if idx == num_plots - 1:
+            ax2.set_ylabel(y2label, color="green")
+
+    # Hide redundant secondary y-axis labels
+    for ax2 in twin_axes[:-1]:
+        ax2.yaxis.set_tick_params(labelright=False)
+
+    if sup_title:
+        plt.suptitle(sup_title)
+
+    fig.tight_layout()
+    plt.show(fig)
+
+    return fig
+
+# ----------- Helper functions
+
+# --- Check_length
+def check_length( x_data, y_data ):
+	min_len = min( x_data.size, y_data.size )
+	if min_len == 0:
+		return None, None
+	else:
+		return x_data[:min_len], y_data[:min_len]
+    
