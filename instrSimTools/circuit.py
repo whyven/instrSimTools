@@ -703,6 +703,15 @@ def run_batch_simulations(
     print(f"Successful/Total Simulations: {runner.okSim}/{runner.runno}")
     return results, logs
 
+# --- Pull Signals from Batch Simulations Results
+def get_batchSim_sigs_from_results( data, monitor, ntime ):
+    signals = OrderedDict()
+    xn = np.arange( *ntime )
+    for k, d in data.items():
+        sigs = [ d[0], d[1][monitor] ]
+        signals[k] = np.interp(xn, *sigs)
+    return xn, signals
+
 def extract_spice_log_measurements(
     log_files: Dict[str, str],
     keys_to_extract: list[str] = None
