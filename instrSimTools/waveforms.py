@@ -32,6 +32,8 @@ HSR_PP_BUNCH_LENGTH_275GeV = 6.0e-2  / const.c     # - s rms (formula is given i
 HSR_AU_BUNCH_LENGTH_10GeV  = 125.0e-2 / const.c     # - s rms (formula is given in cm)
 HSR_AU_BUNCH_LENGTH_41GeV  = 11.6e-2  / const.c     # - s rms (formula is given in cm)
 HSR_AU_BUNCH_LENGTH_110GeV = 7.0e-2   / const.c     # - s rms (formula is given in cm)
+# ---- ---- AU ---- ---- #
+HSR_HE_BUNCH_LENGTH_11GeV  = 118.0e-2 / const.c     # - s rms (formula is given in cm)
 
 # ---- ESR Frequencies ---- #
 ESR_REV_FREQ            = 78194.34  # - Hz
