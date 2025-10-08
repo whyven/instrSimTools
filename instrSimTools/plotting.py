@@ -499,6 +499,7 @@ def compare_plot_multiple(
     return fig
 
 # --- Dual y-axis comparison plots - Row seperated
+#FIXME : Single plot with dual y-axes not working... crashing
 def dual_axis_comparison_plot(
     time: Union[np.ndarray, List[np.ndarray], Tuple[np.ndarray, ...]],
     y1_data: Union[List[np.ndarray], Tuple[np.ndarray, ...]],

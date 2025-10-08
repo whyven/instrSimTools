@@ -694,7 +694,8 @@ def run_batch_simulations(
         raw_data = RawRead(raw)
         time = raw_data.get_wave('time')
         signal_data = { mon : raw_data.get_wave(mon) for mon in monitors } 
-        waveform_id = str(raw).split('.')[0][-1]
+        num_underscores = len(str(raw).split('_'))
+        waveform_id = str(raw).split('.')[0].split('_')[num_underscores-1]
         key = sim_order[waveform_id]
         print(f"Reading results for {key} -> Raw: {raw}, Log: {log}")
         results[key] = (time, signal_data)
