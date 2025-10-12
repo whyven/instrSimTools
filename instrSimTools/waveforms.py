@@ -821,8 +821,12 @@ def pulse_waveform(
         "doublet": gaus_doublet_pulse,
         "morlet": morlet_pulse,
     }
+    bunch_shape = bunch_shape.lower()
     if bunch_shape in sig.keys():
-        return sig[bunch_shape]( test_time, bunch_width, **kwargs )
+        if bunch_shape == "gauss":
+            return sig[bunch_shape]( test_time, bunch_width, **kwargs )[0]
+        else:
+            return sig[bunch_shape]( test_time, bunch_width, **kwargs )
     else:
         raise ValueError(f"Invalid bunch shape: {bunch_shape}")
 
